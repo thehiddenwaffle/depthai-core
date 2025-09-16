@@ -3,11 +3,13 @@
 #include <ostream>
 #include <vector>
 
+#include "ImgAnnotations.hpp"
 #include "depthai/common/Point3f.hpp"
 #include "depthai/common/Rect.hpp"
 #include "depthai/common/optional.hpp"
 #include "depthai/pipeline/datatype/Buffer.hpp"
 #include "depthai/pipeline/datatype/ImgDetections.hpp"
+#include "depthai/pipeline/node/host/contrib/host_nodes_ext/Constants.hpp"
 
 namespace dai {
 
@@ -78,6 +80,23 @@ class Tracklets : public Buffer {
         metadata = utility::serialize(*this);
         datatype = DatatypeEnum::Tracklets;
     };
+
+    dai::VisualizeType getVisualizationMessage() const override {
+        auto retAnnts = std::make_shared<ImgAnnotations>();
+        retAnnts->ts = this->ts;
+        retAnnts->sequenceNum = this->sequenceNum;
+
+        auto annotation = std::make_shared<ImgAnnotation>();
+
+        for(auto& tracklet : tracklets) {
+            Point2f tl = tracklet.roi.topLeft(), br = tracklet.roi.bottomRight();
+            const auto w = tracklet.roi.width, h = tracklet.roi.height;
+            const auto [srcW, srcH] = transformation.getSourceSize();
+            annotation->points.emplace_back(PointsAnnotation{.type = PointsAnnotationType::LINE_LOOP, .points = {tl, {tl.x + w, tl.y}, br, {tl.x, tl.y + h}}, .outlineColor = DETECTION_COLOR, .outlineColors = {}, .fillColor = {}, .thickness = detectionThickness(srcW, srcH)});
+        }
+        retAnnts->annotations.push_back(*annotation);
+        return retAnnts;
+    }
 
     DEPTHAI_SERIALIZE(Tracklets, tracklets, transformation, Buffer::ts, Buffer::tsDevice, Buffer::sequenceNum);
 };

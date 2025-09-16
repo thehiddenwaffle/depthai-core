@@ -34,6 +34,7 @@
 #include "pipeline/CommonBindings.hpp"
 #include "pipeline/FilterParamsBindings.hpp"
 #include "pipeline/PipelineBindings.hpp"
+#include "pipeline/node/HostNodeExtBindings.hpp"
 #include "pipeline/node/NodeBindings.hpp"
 #include "remote_connection/RemoteConnectionBindings.hpp"
 #include "utility/EventsManagerBindings.hpp"
@@ -91,6 +92,9 @@ PYBIND11_MODULE(depthai, m)
     callstack.push_front(&EventsManagerBindings::bind);
     callstack.push_front(&RemoteConnectionBindings::bind);
     callstack.push_front(&FilterParamsBindings::bind);
+#ifdef DEPTHAI_BUILD_EXT_HOST_NODES
+    HostNodeExtBindings::addToCallstack(callstack);
+#endif
     // end of the callstack
     callstack.push_front([](py::module&, void*) {});
 

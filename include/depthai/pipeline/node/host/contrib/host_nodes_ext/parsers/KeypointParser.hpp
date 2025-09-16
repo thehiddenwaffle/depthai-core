@@ -3,14 +3,11 @@
 //
 
 #pragma once
+#include "messages/Keypoints.hpp"
 #include "BaseParser.hpp"
 
 namespace dai::node {
 
-enum class ValuesPerKeypoint: uint8_t {
-    Two = 2,
-    Three = 3
-};
 
 class KeypointParser : virtual public CustomParser<KeypointParser> {
 public:
@@ -23,8 +20,8 @@ protected:
     std::vector<nn_archive::v1::Output> keypointsOutputs{};
     uint16_t nKeypoints = 17;
     // dimensionality: 2D or 3D
-    ValuesPerKeypoint valuesPerKeypoint = ValuesPerKeypoint::Two;
+    singlekp::ValuesPerKeypoint valuesPerKeypoint = singlekp::ValuesPerKeypoint::Two;
     std::vector<std::string> keypointNames{};
-    std::vector<std::pair<uint8_t, uint8_t>> skeletonEdges{};
+    std::optional<std::vector<std::pair<uint16_t, uint16_t>>> skeletonEdges = std::nullopt;
 };
 }

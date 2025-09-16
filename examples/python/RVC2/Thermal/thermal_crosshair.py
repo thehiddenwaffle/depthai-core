@@ -39,7 +39,7 @@ with dai.Pipeline(True) as pipeline:
         )
         normalizedThermalData = cv2.normalize(thermalData, None, 0, 1, cv2.NORM_MINMAX)
         normalizedThermalData = (normalizedThermalData * 255).astype(np.uint8)
-        colormappedFrame = cv2.applyColorMap(normalizedThermalData, cv2.COLORMAP_MAGMA)
+        colormappedFrame = cv2.applyColorMap(normalizedThermalData, cv2.COLORMAP_HOT)
         if not initialRescaleAndPositionDone:
             cv2.moveWindow(MAGMA_WINDOW_NAME, 0, 0)
             width, height = colormappedFrame.shape[1], colormappedFrame.shape[0]
@@ -49,7 +49,7 @@ with dai.Pipeline(True) as pipeline:
             cv2.setMouseCallback(MAGMA_WINDOW_NAME, onMouse)
             cv2.setMouseCallback(IMAGE_WINDOW_NAME, onMouse)
             initialRescaleAndPositionDone = True
-        colormappedFrame = cv2.applyColorMap(colormappedFrame, cv2.COLORMAP_MAGMA)
+        colormappedFrame = cv2.applyColorMap(colormappedFrame, cv2.COLORMAP_HOT)
         if (
             mouseX < 0
             or mouseY < 0

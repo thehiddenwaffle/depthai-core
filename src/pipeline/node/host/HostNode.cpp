@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "depthai/pipeline/Pipeline.hpp"
+#include "pipeline/ThreadedNodeImpl.hpp"
 
 namespace dai {
 namespace node {
@@ -28,6 +29,11 @@ void HostNode::run() {
 
             // Send the output, if there is any
             if(out) {
+                std::string conns;
+                for (auto conn : self->out.getQueueConnections()) {
+                    conns.append(fmt::format("{} -> {},\t", conn.output->getName(),  static_cast<void*>(conn.queue.get())));
+                }
+                self->pimpl->logger->trace("sending message via output: {}, cons: {}", self->out.toString(), conns);
                 self->out.send(out);
             }
         };

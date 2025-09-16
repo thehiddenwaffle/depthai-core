@@ -1027,6 +1027,7 @@ if (DEPTHAI_BUILD_EXT_HOST_NODES)
             host_nodes_ext/parsers/SimCCKeypointParser.cpp
             host_nodes_ext/parsers/KeypointParser.cpp
             host_nodes_ext/messages/Keypoints.cpp
+            host_nodes_ext/postprocessors/KeypointLocalizer.cpp
     )
     list(TRANSFORM TARGET_EXT_NODES_SOURCES PREPEND "src/pipeline/node/host/contrib/")
 #
@@ -1055,6 +1056,7 @@ if (DEPTHAI_BUILD_EXT_HOST_NODES)
             PRIVATE
             spdlog::spdlog
             xtensor
+            Python::NumPy
             PUBLIC
             depthai::core
     )

@@ -39,7 +39,15 @@ option(DEPTHAI_PYTHON_ENABLE_TESTS "Enable tests" OFF)
 option(DEPTHAI_PYTHON_ENABLE_EXAMPLES "Enable examples" OFF)
 option(DEPTHAI_PYTHON_BUILD_DOCSTRINGS "Generate docstrings from header files if module 'pybind11_mkdoc' available" ON)
 option(DEPTHAI_PYTHON_EMBEDDED_MODULE "Create an embeddable module" OFF)
-cmake_dependent_option(DEPTHAI_PYTHON_EMBEDDED_MODULE_TARGET "Create an additional target with pybind embedded module" OFF DEPTHAI_PYTHON_EMBEDDED_MODULE && TARGET_EMBED_NAME OFF)
+cmake_dependent_option(DEPTHAI_PYTHON_EMBEDDED_MODULE_TARGET "Create an additional target with pybind embedded module" OFF DEPTHAI_PYTHON_EMBEDDED_MODULE OFF)
+option(DEPTHAI_BUILD_EXT_HOST_NODES "Build the contrib host nodes lib" ON)
+
+set (Python3_FIND_VIRTUALENV ONLY)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development NumPy)
+set(PYTHON_EXECUTABLE Python3_EXECUTABLE)
+if(NOT NUMPY_INCLUDE_DIRS)
+    set(NUMPY_INCLUDE_DIRS ${Python_NumPy_INCLUDE_DIR})
+endif()
 
 # Add pybind11 dependency
 #add_subdirectory(pybind11-2.5.0)
@@ -51,6 +59,14 @@ endif()
 
 # Add external dependencies
 add_subdirectory(external)
+
+if (DEPTHAI_BUILD_EXT_HOST_NODES)
+    set(EXT_HOST_NODE_SOURCES
+        src/pipeline/node/HostNodeExtBindings.cpp
+        src/pipeline/node/host_node_ext/ParsingNeuralNetworkBindings.cpp
+        src/pipeline/node/host_node_ext/KeypointLocalizerBindings.cpp
+    )
+endif ()
 
 set(SOURCE_LIST
     src/py_bindings.cpp
@@ -108,6 +124,7 @@ set(SOURCE_LIST
     src/pipeline/node/RGBDBindings.cpp
     src/pipeline/node/ImageFiltersBindings.cpp
     src/pipeline/FilterParamsBindings.cpp
+    ${EXT_HOST_NODE_SOURCES}
 
     src/pipeline/datatype/ADatatypeBindings.cpp
     src/pipeline/datatype/AprilTagConfigBindings.cpp
@@ -199,10 +216,10 @@ if(WIN32)
 endif()
 
 # Add stubs (pyi) generation step after building bindings
-execute_process(COMMAND "${PYTHON_EXECUTABLE}" "-c" "from mypy import api" RESULT_VARIABLE error OUTPUT_QUIET ERROR_QUIET)
+execute_process(COMMAND "${Python3_EXECUTABLE}" "-c" "from mypy import api" RESULT_VARIABLE error OUTPUT_QUIET ERROR_QUIET )
 if(error OR CMAKE_CROSSCOMPILING)
     message(WARNING "Mypy not available or cross compiling - stubs won't be generated or checked")
-else()
+elseif (DEPTHAI_PYTHON_BUILD_DOCSTRINGS)
     get_target_property(bindings_directory ${TARGET_NAME} LIBRARY_OUTPUT_DIRECTORY)
     if(NOT bindings_directory)
         set(bindings_directory ${CMAKE_CURRENT_BINARY_DIR})
@@ -212,10 +229,12 @@ else()
         ${CMAKE_COMMAND} -E env
         # Python path (to find compiled module)
         "PYTHONPATH=$<TARGET_FILE_DIR:${TARGET_NAME}>${SYS_PATH_SEPARATOR}$ENV{PYTHONPATH}"
-        ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_LIST_DIR}/generate_stubs.py" "${TARGET_NAME}" "$<TARGET_FILE_DIR:${TARGET_NAME}>"
+        ${Python3_EXECUTABLE} "${CMAKE_CURRENT_LIST_DIR}/generate_stubs.py" "${TARGET_NAME}" "$<TARGET_FILE_DIR:${TARGET_NAME}>"
         DEPENDS "${CMAKE_CURRENT_LIST_DIR}/generate_stubs.py"
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
+else ()
+    message(WARNING "Docstrings not being built - stubs won't be generated or checked")
 endif()
 
 # Docstring options
@@ -258,6 +277,9 @@ if (DEPTHAI_PYTHON_BUILD_DOCSTRINGS)
     if(DEPTHAI_RTABMAP_SUPPORT)
         list(APPEND DEPTHAI_MKDOC_TARGETS depthai::rtabmap)
     endif()
+    if (DEPTHAI_PYTHON_EMBEDDED_MODULE_TARGET)
+        list(APPEND DEPTHAI_MKDOC_TARGETS ${TARGET_EMBED_NAME})
+    endif ()
     # Set up docstrings for combined targets
     target_pybind11_mkdoc_setup_combined(${docstring_output_path} ${DEPTHAI_PYTHON_FORCE_DOCSTRINGS} ${DEPTHAI_MKDOC_TARGETS})
 
@@ -286,6 +308,14 @@ if (DEPTHAI_PYTHON_EMBEDDED_MODULE_TARGET)
     target_include_directories(${TARGET_EMBED_NAME} PRIVATE src ${DOCSTRINGS_INCLUDE_PLACEHOLDER_DIR} "${CMAKE_CURRENT_LIST_DIR}/../../src")
 endif ()
 
+if (DEPTHAI_BUILD_EXT_HOST_NODES)
+    get_target_property(EXT_HOST_NODE_INCLUDES ${TARGET_EXTRA_NAME} INCLUDE_DIRECTORIES)
+    target_include_directories(${TARGET_NAME} PRIVATE ${EXT_HOST_NODE_INCLUDES})
+    if (DEPTHAI_PYTHON_EMBEDDED_MODULE_TARGET)
+        target_include_directories(${TARGET_EMBED_NAME} PRIVATE ${EXT_HOST_NODE_INCLUDES})
+    endif ()
+endif ()
+
 set(DEPTHAI_LINK_TARGET depthai::core)
 if(NOT DEPTHAI_MERGED_TARGET)
     list(APPEND DEPTHAI_LINK_TARGET depthai::opencv)
@@ -297,7 +327,9 @@ endif()
 if(DEPTHAI_RTABMAP_SUPPORT AND DEPTHAI_PCL_SUPPORT)
     list(APPEND DEPTHAI_LINK_TARGET depthai::rtabmap)
 endif()
-
+if (DEPTHAI_BUILD_EXT_HOST_NODES)
+    list(APPEND DEPTHAI_LINK_TARGET depthai::${TARGET_EXTRA_ALIAS})
+endif ()
 # Link with libraries
 target_link_libraries(${TARGET_NAME}
     PUBLIC
@@ -315,7 +347,7 @@ if (DEPTHAI_PYTHON_EMBEDDED_MODULE_TARGET)
             PUBLIC
             # pybind11
             pybind11::embed
-            depthai::core
+            ${DEPTHAI_LINK_TARGET}
             PRIVATE
             hedley
             pybind11_json
@@ -341,6 +373,12 @@ if(DEPTHAI_PYTHON_EMBEDDED_MODULE)
     endif ()
 endif()
 
+if (DEPTHAI_BUILD_EXT_HOST_NODES)
+    target_compile_definitions(${TARGET_NAME} PRIVATE DEPTHAI_BUILD_EXT_HOST_NODES)
+    if (DEPTHAI_PYTHON_EMBEDDED_MODULE_TARGET)
+        target_compile_definitions(${TARGET_EMBED_NAME} PRIVATE DEPTHAI_BUILD_EXT_HOST_NODES)
+    endif ()
+endif ()
 if(DEPTHAI_ENABLE_REMOTE_CONNECTION)
     target_compile_definitions(${TARGET_NAME} PRIVATE DEPTHAI_ENABLE_REMOTE_CONNECTION)
     if (DEPTHAI_PYTHON_EMBEDDED_MODULE_TARGET)
@@ -392,7 +430,7 @@ set(version_command "import find_version as v; print(v.get_package_version())")
 if(DEPTHAI_PYTHON_COMMIT_HASH)
     set(version_command "import find_version as v; print(v.get_package_dev_version('${DEPTHAI_PYTHON_COMMIT_HASH}'))")
 endif()
-execute_process(COMMAND ${PYTHON_EXECUTABLE} "-c" "${version_command}"
+execute_process(COMMAND ${Python3_EXECUTABLE} "-c" "${version_command}"
     OUTPUT_VARIABLE DEPTHAI_PYTHON_VERSION
     OUTPUT_STRIP_TRAILING_WHITESPACE
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}

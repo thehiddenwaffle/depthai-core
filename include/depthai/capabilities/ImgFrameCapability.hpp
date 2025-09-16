@@ -45,7 +45,7 @@ class ImgFrameCapability : public CapabilityCRTP<Capability, ImgFrameCapability>
     CapabilityRange<std::pair<uint32_t, uint32_t>> size;
     CapabilityRange<float> fps;
     std::optional<ImgFrame::Type> type;
-    ImgResizeMode resizeMode{ImgResizeMode::CROP};
+    ImgResizeMode resizeMode{ImgResizeMode::STRETCH};
     std::optional<bool> enableUndistortion;
     // TODO(jakgra) add optional CapabilityRange fov / max-min horiz. / vertical crop;
 

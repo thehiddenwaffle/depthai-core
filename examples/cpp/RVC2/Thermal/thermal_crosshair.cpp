@@ -47,7 +47,7 @@ int main() {
 
         // Apply color map
         cv::Mat colormappedFrame;
-        cv::applyColorMap(normalizedThermalData, colormappedFrame, cv::COLORMAP_MAGMA);
+        cv::applyColorMap(normalizedThermalData, colormappedFrame, cv::COLORMAP_HOT);
 
         if(!initialRescaleAndPositionDone) {
             cv::moveWindow(MAGMA_WINDOW_NAME, 0, 0);

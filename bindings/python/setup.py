@@ -119,6 +119,8 @@ class CMakeBuild(build_ext):
         env = os.environ.copy()
 
         cmake_args += ['-DDEPTHAI_BUILD_PYTHON=ON']
+        cmake_args += ['-DDEPTHAI_BUILD_EXT_HOST_NODES=ON']
+        cmake_args += ['-DDEPTHAI_PYTHON_FORCE_DOCSTRINGS=ON']
         if env.get('DEPTHAI_BUILD_BASALT') == 'ON':
             cmake_args += ['-DDEPTHAI_BASALT_SUPPORT=ON']
         if env.get('DEPTHAI_BUILD_PCL') == 'ON':
@@ -130,7 +132,7 @@ class CMakeBuild(build_ext):
         build_args += ['--target=depthai']
 
         # Specify output directory and python executable
-        cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir, '-DPYTHON_EXECUTABLE=' + sys.executable]
+        cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir, '-DPython3_ROOT_DIR=' + sys.exec_prefix]
         # Specify dir of python executable (pybind11)
         if platform.system() == "Windows":
             # Windows - remove case insensitive variants
@@ -211,8 +213,8 @@ class CMakeBuild(build_ext):
             num_threads = min(num_threads, max_threads)
             if num_threads <= 0:
                 num_threads = 1
-            build_args += ['--', '-j' + str(num_threads)]
-            cmake_args += ['-DHUNTER_JOBS_NUMBER=' + str(num_threads)]
+            build_args += ['--', '-j' + str(4)]
+            cmake_args += ['-DHUNTER_JOBS_NUMBER=' + str(2)]
 
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''), self.distribution.get_version())
 
