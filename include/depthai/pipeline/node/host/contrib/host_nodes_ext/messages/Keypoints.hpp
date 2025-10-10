@@ -139,6 +139,17 @@ class Keypoints : public Buffer {
         }
     }
 
+    [[nodiscard]] std::shared_ptr<const std::vector<float_t>> getValuesOnly() const {
+        auto yIndex = keypoint_y_index<singlekp::Keypoint<D, I>>();
+        auto maybeZIndex = keypoint_z_index<singlekp::Keypoint<D, I> >();
+        auto keeps = maybeZIndex.has_value() ? xt::keep(0, yIndex, maybeZIndex.value()) : xt::keep(0, yIndex);
+        auto view = xt::view(keypointsXT, xt::all(), keeps);
+        auto ret = std::make_shared<std::vector<float_t>>();
+        ret->reserve(view.size());
+        ret->assign(view.begin(), view.end());
+        return ret;
+    }
+
     Keypoints(std::shared_ptr<const NNData> other, xt::xarray<float>&& planarStackedKeypoints, std::optional<std::vector<std::pair<uint16_t, uint16_t>>>&& skeletonEdges);
     Keypoints(std::shared_ptr<Keypoints> other);
 
