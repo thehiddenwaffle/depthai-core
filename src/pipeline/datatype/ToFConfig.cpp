@@ -2,7 +2,14 @@
 
 namespace dai {
 
-ToFConfig& ToFConfig::setMedianFilter(MedianFilter median) {
+ToFConfig::~ToFConfig() = default;
+
+void ToFConfig::serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const {
+    metadata = utility::serialize(*this);
+    datatype = DatatypeEnum::ToFConfig;
+}
+
+ToFConfig& ToFConfig::setMedianFilter(filters::params::MedianFilter median) {
     this->median = median;
     return *this;
 }

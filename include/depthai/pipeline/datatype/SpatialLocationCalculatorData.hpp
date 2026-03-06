@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "depthai/common/Point3f.hpp"
 #include "depthai/pipeline/datatype/Buffer.hpp"
 #include "depthai/pipeline/datatype/SpatialLocationCalculatorConfig.hpp"
 
@@ -65,7 +66,7 @@ class SpatialLocationCalculatorData : public Buffer {
      * Construct SpatialLocationCalculatorData message.
      */
     SpatialLocationCalculatorData() = default;
-    virtual ~SpatialLocationCalculatorData() = default;
+    virtual ~SpatialLocationCalculatorData();
 
     /**
      * Retrieve configuration data for SpatialLocationCalculatorData.
@@ -75,10 +76,10 @@ class SpatialLocationCalculatorData : public Buffer {
     // TODO(Morato) - make this private
     std::vector<SpatialLocations> spatialLocations;
 
-    void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const override {
-        metadata = utility::serialize(*this);
-        datatype = DatatypeEnum::SpatialLocationCalculatorData;
-    };
+    void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const override;
+    DatatypeEnum getDatatype() const override {
+        return DatatypeEnum::SpatialLocationCalculatorData;
+    }
     DEPTHAI_SERIALIZE(SpatialLocationCalculatorData, Buffer::sequenceNum, Buffer::ts, Buffer::tsDevice, spatialLocations);
 };
 

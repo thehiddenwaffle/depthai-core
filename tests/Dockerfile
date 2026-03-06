@@ -9,6 +9,10 @@ ENV FLAVOR=${FLAVOR}
 ARG PARALLEL_JOBS=8
 ARG PULL_REQUEST="false"
 
+ENV VCPKG_DOWNLOADS=/opt/vcpkg-downloads
+ENV VCPKG_DEFAULT_BINARY_CACHE=/opt/vcpkg-bincache
+ENV VCPKG_BINARY_SOURCES="clear;files,/opt/vcpkg-bincache,readwrite"
+
 # Update and install all required packages in one go
 RUN apt-get update && \
     apt-get install -y \
@@ -67,11 +71,10 @@ RUN apt-get update && \
 
 RUN locale-gen en_US.UTF-8
 
-# Set workdir to your project directory
 WORKDIR /workspace
 
 # Copy project files
-ARG BRANCH=v3_develop
+ARG BRANCH=develop
 ARG REPO_URL=https://github.com/luxonis/depthai-core.git
 ARG GIT_COMMIT=unspecified  # commit SHA busts cache
 
@@ -94,10 +97,16 @@ RUN python3 -m venv venv && \
 
 ENV PATH="/workspace/venv/bin:$PATH"
 
-# Set toolchain path only if flavor != vanilla
-RUN if [ "$FLAVOR" != "vanilla" ]; then \
-        export CMAKE_TOOLCHAIN_PATH=/workspace/cmake/toolchain/${FLAVOR}.cmake && \
-        echo "Using toolchain: $CMAKE_TOOLCHAIN_PATH"; \
+RUN --mount=type=cache,target=/opt/vcpkg-downloads \
+    curl -fL --retry 5 --retry-delay 2 \
+      https://mirrors.kernel.org/gnu/gperf/gperf-3.1.tar.gz \
+      -o /opt/vcpkg-downloads/gperf-3.1.tar.gz
+
+RUN --mount=type=cache,target=/opt/vcpkg-downloads \
+    --mount=type=cache,target=/opt/vcpkg-bincache \
+    if [ "$FLAVOR" != "vanilla" ] && [ "$FLAVOR" != "tsan" ]; then \
+        export CMAKE_TOOLCHAIN_FILE=/workspace/cmake/toolchain/${FLAVOR}.cmake && \
+        echo "Using toolchain: $CMAKE_TOOLCHAIN_FILE"; \
     else \
         echo "Using vanilla flavor (no toolchain)"; \
     fi && \
@@ -112,5 +121,6 @@ RUN if [ "$FLAVOR" != "vanilla" ]; then \
         -D DEPTHAI_PYTHON_TEST_EXAMPLES=ON \
         -D DEPTHAI_PYTHON_ENABLE_EXAMPLES=ON"; fi)
 
-
-RUN cmake --build build --parallel $PARALLEL_JOBS --config Release
+RUN --mount=type=cache,target=/opt/vcpkg-downloads \
+    --mount=type=cache,target=/opt/vcpkg-bincache \
+    cmake --build build --parallel $PARALLEL_JOBS --config Release

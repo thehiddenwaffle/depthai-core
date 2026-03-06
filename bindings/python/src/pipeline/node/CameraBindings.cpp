@@ -38,6 +38,24 @@ void bind_camera(pybind11::module& m, void* pCallstack) {
              DOC(dai, node, Camera, build))
         .def("build", py::overload_cast<ReplayVideo&>(&Camera::build), py::arg("replayNode"), DOC(dai, node, Camera, build))
 #endif
+        .def("setSensorType", py::overload_cast<dai::CameraSensorType>(&Camera::setSensorType), py::arg("sensorType"), DOC(dai, node, Camera, setSensorType))
+        .def("getSensorType", &Camera::getSensorType, DOC(dai, node, Camera, getSensorType))
+        .def("setImageOrientation", &Camera::setImageOrientation, py::arg("imageOrientation"), DOC(dai, node, Camera, setImageOrientation))
+        .def("getImageOrientation", &Camera::getImageOrientation, DOC(dai, node, Camera, getImageOrientation))
+        .def("setRawNumFramesPool", &Camera::setRawNumFramesPool, "num"_a, DOC(dai, node, Camera, setRawNumFramesPool))
+        .def("setMaxSizePoolRaw", &Camera::setMaxSizePoolRaw, "size"_a, DOC(dai, node, Camera, setMaxSizePoolRaw))
+        .def("setIspNumFramesPool", &Camera::setIspNumFramesPool, "num"_a, DOC(dai, node, Camera, setIspNumFramesPool))
+        .def("setMaxSizePoolIsp", &Camera::setMaxSizePoolIsp, "size"_a, DOC(dai, node, Camera, setMaxSizePoolIsp))
+        .def("setNumFramesPools", &Camera::setNumFramesPools, "raw"_a, "isp"_a, "imgmanip"_a, DOC(dai, node, Camera, setNumFramesPools))
+        .def("setMaxSizePools", &Camera::setMaxSizePools, "raw"_a, "isp"_a, "imgmanip"_a, DOC(dai, node, Camera, setMaxSizePools))
+        .def("setOutputsNumFramesPool", &Camera::setOutputsNumFramesPool, "num"_a, DOC(dai, node, Camera, setOutputsNumFramesPool))
+        .def("setOutputsMaxSizePool", &Camera::setOutputsMaxSizePool, "size"_a, DOC(dai, node, Camera, setOutputsMaxSizePool))
+        .def("getRawNumFramesPool", &Camera::getRawNumFramesPool, DOC(dai, node, Camera, getRawNumFramesPool))
+        .def("getMaxSizePoolRaw", &Camera::getMaxSizePoolRaw, DOC(dai, node, Camera, getMaxSizePoolRaw))
+        .def("getIspNumFramesPool", &Camera::getIspNumFramesPool, DOC(dai, node, Camera, getIspNumFramesPool))
+        .def("getMaxSizePoolIsp", &Camera::getMaxSizePoolIsp, DOC(dai, node, Camera, getMaxSizePoolIsp))
+        .def("getOutputsNumFramesPool", &Camera::getOutputsNumFramesPool, DOC(dai, node, Camera, getOutputsNumFramesPool))
+        .def("getOutputsMaxSizePool", &Camera::getOutputsMaxSizePool, DOC(dai, node, Camera, getOutputsMaxSizePool))
         // .def("setBoardSocket", &Camera::setBoardSocket, "boardSocket"_a, DOC(dai, node, Camera, setBoardSocket))
         .def("getBoardSocket", &Camera::getBoardSocket, DOC(dai, node, Camera, getBoardSocket))
         .def("setMockIsp", &Camera::setMockIsp, "mockIsp"_a, DOC(dai, node, Camera, setMockIsp))
@@ -53,6 +71,11 @@ void bind_camera(pybind11::module& m, void* pCallstack) {
              "enableUndistortion"_a = std::nullopt,
              py::return_value_policy::reference_internal,
              DOC(dai, node, Camera, requestOutput))
+        .def("requestIspOutput",
+             py::overload_cast<std::optional<float>>(&Camera::requestIspOutput),
+             "fps"_a = std::nullopt,
+             py::return_value_policy::reference_internal,
+             DOC(dai, node, Camera, requestIspOutput))
         .def("requestOutput",
              py::overload_cast<const Capability&, bool>(&Camera::requestOutput),
              "capability"_a,

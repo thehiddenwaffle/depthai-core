@@ -26,7 +26,7 @@ struct ToFProperties : PropertiesSerializable<Properties, ToFProperties> {
     /**
      * Number of shaves reserved for ToF decoding.
      */
-    std::int32_t numShaves = 1;
+    std::optional<std::int32_t> numShaves;
 
     /// Warp HW IDs to use for undistortion, if empty, use auto/default
     std::vector<int> warpHwIds;
@@ -55,6 +55,8 @@ struct ToFProperties : PropertiesSerializable<Properties, ToFProperties> {
      * Pool sizes
      */
     int numFramesPoolRaw = 3;
+
+    ~ToFProperties() override;
 };
 
 DEPTHAI_SERIALIZE_EXT(ToFProperties, initialConfig, numFramesPool, numShaves, warpHwIds, boardSocket, cameraName, imageOrientation, fps, numFramesPoolRaw);

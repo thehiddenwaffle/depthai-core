@@ -1,11 +1,9 @@
 import os
-import io
 import re
 import sys
 import platform
 import subprocess
 import find_version
-import multiprocessing
 
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
@@ -62,12 +60,34 @@ if len(__version__.split("+")) > 1 :
 
 
 ## Read description (README.md)
-long_description = io.open("README.md", encoding="utf-8").read()
+long_description = open("README.md", "r", encoding="utf-8").read()
 
 ## Early settings
-MACOS_ARM64_WHEEL_NAME_OVERRIDE = 'macosx-11.0-arm64'
-if sys.platform == 'darwin' and platform.machine() == 'arm64':
-    os.environ['_PYTHON_HOST_PLATFORM'] = MACOS_ARM64_WHEEL_NAME_OVERRIDE
+MACOSX_DEPLOYMENT_TARGETS = {
+    "arm64": "11.0",
+    "x86_64": "11.0",
+}
+MACOS_SETTINGS = {}
+
+def _configure_macos_build_settings():
+    arch = platform.machine().lower()
+    arch = "arm64" if arch == "arm64" else "x86_64"
+    default_target = MACOSX_DEPLOYMENT_TARGETS[arch]
+    deployment_target = os.environ.get("MACOSX_DEPLOYMENT_TARGET", default_target)
+    os.environ["MACOSX_DEPLOYMENT_TARGET"] = deployment_target
+
+    wheel_tag = f"macosx-{deployment_target}-{arch}"
+    os.environ["_PYTHON_HOST_PLATFORM"] = wheel_tag
+    os.environ.setdefault("ARCHFLAGS", f"-arch {arch}")
+    os.environ.setdefault("CMAKE_OSX_ARCHITECTURES", arch)
+    return {
+        "arch": arch,
+        "deployment_target": deployment_target,
+        "wheel_tag": wheel_tag,
+    }
+
+if sys.platform == "darwin":
+    MACOS_SETTINGS = _configure_macos_build_settings()
 
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
@@ -95,11 +115,12 @@ class CMakeBuild(build_ext):
     def build_extension(self, ext):
         if ext.name == DEPTHAI_CLI_MODULE_NAME:
             # Copy cam_test.py and it's dependencies to depthai_cli/
-            cam_test_path = os.path.join(here, "utilities", "cam_test.py")
+            repo_root = os.path.abspath(os.path.join(here, os.pardir, os.pardir))
+            cam_test_path      = os.path.join(str(repo_root), "utilities", "cam_test.py")
             cam_test_dest = os.path.join(self.build_lib, DEPTHAI_CLI_MODULE_NAME, "cam_test.py")
-            cam_test_gui_path = os.path.join(here, "utilities", "cam_test_gui.py")
+            cam_test_gui_path  = os.path.join(str(repo_root), "utilities", "cam_test_gui.py")
             cam_test_gui_dest = os.path.join(self.build_lib, DEPTHAI_CLI_MODULE_NAME, "cam_test_gui.py")
-            stress_test_path = os.path.join(here, "utilities", "stress_test.py")
+            stress_test_path   = os.path.join(str(repo_root), "utilities", "stress_test.py")
             stress_test_dest = os.path.join(self.build_lib, DEPTHAI_CLI_MODULE_NAME, "stress_test.py")
             files_to_copy = [(cam_test_path, cam_test_dest), (cam_test_gui_path, cam_test_gui_dest), (stress_test_path, stress_test_dest)]
             for src, dst in files_to_copy:
@@ -119,8 +140,14 @@ class CMakeBuild(build_ext):
         env = os.environ.copy()
 
         cmake_args += ['-DDEPTHAI_BUILD_PYTHON=ON']
+        cmake_args += ['-DDEPTHAI_ENABLE_EVENTS_MANAGER=ON']
         cmake_args += ['-DDEPTHAI_BUILD_EXT_HOST_NODES=ON']
-        cmake_args += ['-DDEPTHAI_PYTHON_FORCE_DOCSTRINGS=ON']
+
+        # build shared libs only in CI - for downstream wheel bundling
+        if env.get("CI") is not None:
+            cmake_args += ['-DBUILD_SHARED_LIBS=ON']
+
+        cmake_args += ['-DDEPTHAI_MERGED_TARGET=ON']
         if env.get('DEPTHAI_BUILD_BASALT') == 'ON':
             cmake_args += ['-DDEPTHAI_BASALT_SUPPORT=ON']
         if env.get('DEPTHAI_BUILD_PCL') == 'ON':
@@ -131,8 +158,9 @@ class CMakeBuild(build_ext):
             cmake_args += ['-DDEPTHAI_KOMPUTE_SUPPORT=ON']
         build_args += ['--target=depthai']
 
+
         # Specify output directory and python executable
-        cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir, '-DPython3_ROOT_DIR=' + sys.exec_prefix]
+        cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir, '-DPYTHON_EXECUTABLE=' + sys.executable]
         # Specify dir of python executable (pybind11)
         if platform.system() == "Windows":
             # Windows - remove case insensitive variants
@@ -155,6 +183,7 @@ class CMakeBuild(build_ext):
 
         # Set build type (debug vs release for library as well as dependencies)
         cfg = 'Debug' if self.debug else 'Release'
+        cmake_args += ['-DPIP_TEMP_LIB_FOLDER=' + os.path.abspath(os.path.join(self.build_temp, cfg))]
         cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
         cmake_args += ['-DDEPTHAI_VCPKG_INTERNAL_ONLY=OFF']
         build_args += ['--config', cfg]
@@ -184,8 +213,8 @@ class CMakeBuild(build_ext):
         # Windows
         if platform.system() == "Windows":
             cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}'.format(cfg.upper(), extdir)]
-            cmake_args += ['-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE={}'.format(os.path.dirname(os.path.abspath(__file__)) + '/cmake/toolchain/msvc.cmake')]
-            cmake_args += ['-DVCPKG_TARGET_TRIPLET=x64-windows-static-crt']
+            # cmake_args += ['-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE={}'.format(os.path.dirname(os.path.abspath(__file__)) + '/cmake/toolchain/msvc.cmake')]
+            # cmake_args += ['-DVCPKG_TARGET_TRIPLET=x64-windows-static-crt'] # Keep the default triplet to avoid dual CRT issues
 
 
             # Detect whether 32 / 64 bit Python is used and compile accordingly
@@ -200,21 +229,28 @@ class CMakeBuild(build_ext):
         else:
             # if macos add some additional env vars
             if sys.platform == 'darwin':
-                from distutils import util
-                if platform.machine() == 'arm64':
-                    # Build ARM64 wheels explicitly instead of universal2
-                    env['_PYTHON_HOST_PLATFORM'] = MACOS_ARM64_WHEEL_NAME_OVERRIDE
-                else:
-                    env['_PYTHON_HOST_PLATFORM'] = re.sub(r'macosx-[0-9]+\.[0-9]+-(.+)', r'macosx-10.9-\1', util.get_platform())
+                mac_arch = MACOS_SETTINGS.get('arch', platform.machine())
+                deployment_target = MACOS_SETTINGS.get('deployment_target')
+                wheel_tag = MACOS_SETTINGS.get('wheel_tag')
+                if wheel_tag:
+                    env['_PYTHON_HOST_PLATFORM'] = wheel_tag
+                if deployment_target:
+                    env['MACOSX_DEPLOYMENT_TARGET'] = deployment_target
+                env.setdefault('ARCHFLAGS', os.environ.get('ARCHFLAGS', f'-arch {mac_arch}'))
+                cmake_arch = os.environ.get('CMAKE_OSX_ARCHITECTURES', mac_arch)
+                if not any(arg.startswith('-DCMAKE_OSX_ARCHITECTURES=') for arg in cmake_args):
+                    cmake_args += [f'-DCMAKE_OSX_ARCHITECTURES={cmake_arch}']
+                if deployment_target and not any(arg.startswith('-DCMAKE_OSX_DEPLOYMENT_TARGET=') for arg in cmake_args):
+                    cmake_args += [f'-DCMAKE_OSX_DEPLOYMENT_TARGET={deployment_target}']
 
             # Specify how many threads to use when building, depending on available memory
-            max_threads = multiprocessing.cpu_count()
+            max_threads = os.cpu_count()
             num_threads = (freeMemory // 2000)
             num_threads = min(num_threads, max_threads)
             if num_threads <= 0:
                 num_threads = 1
-            build_args += ['--', '-j' + str(4)]
-            cmake_args += ['-DHUNTER_JOBS_NUMBER=' + str(2)]
+            build_args += ['--', '-j' + str(num_threads)]
+            cmake_args += ['-DHUNTER_JOBS_NUMBER=' + str(num_threads)]
 
         env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''), self.distribution.get_version())
 
@@ -238,7 +274,7 @@ setup(
     license="MIT",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/luxonis/depthai-core/bindings/python",
+    url="https://github.com/luxonis/depthai-core/tree/main/bindings/python",
     ext_modules=[
         CMakeExtension(MODULE_NAME, str(Path(__file__).absolute().parent.parent.parent.absolute())),
         Extension(DEPTHAI_CLI_MODULE_NAME, sources=[])
@@ -260,19 +296,21 @@ setup(
         "Operating System :: Unix",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "Programming Language :: C++",
         "Programming Language :: Python :: Implementation :: CPython",
         "Topic :: Scientific/Engineering",
         "Topic :: Software Development",
     ],
-    python_requires='>=3.7',
+    python_requires='>=3.9',
+    install_requires=[
+        "numpy<3.0.0",
+    ],
     entry_points={
         "console_scripts": [
             f'depthai={DEPTHAI_CLI_MODULE_NAME}.depthai_cli:cli'

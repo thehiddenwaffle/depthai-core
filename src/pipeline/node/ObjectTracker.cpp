@@ -1,7 +1,6 @@
 #include "depthai/pipeline/node/ObjectTracker.hpp"
 
 #include <memory>
-#include <opencv2/opencv.hpp>
 #include <stdexcept>
 #include <utility>
 
@@ -14,6 +13,10 @@
 #include "depthai/properties/ObjectTrackerProperties.hpp"
 #include "pipeline/ThreadedNodeImpl.hpp"
 #include "utility/ObjectTrackerImpl.hpp"
+
+#ifdef DEPTHAI_HAVE_OPENCV_SUPPORT
+    #include <opencv2/opencv.hpp>
+#endif
 
 namespace dai {
 namespace node {
@@ -60,6 +63,7 @@ bool ObjectTracker::runOnHost() const {
     return runOnHostVar;
 }
 
+#ifdef DEPTHAI_HAVE_OPENCV_SUPPORT
 cv::Rect toCvRect(Rect r) {
     if(r.isNormalized()) throw std::runtime_error("dai::Rect must not be normalized in conversion to cv::Rect");
     return {(int)r.x, (int)r.y, (int)r.width, (int)r.height};
@@ -70,6 +74,7 @@ Rect fromCvRect(cv::Rect r) {
 Rect detToRect(const ImgDetection& det) {
     return Rect(Point2f(det.xmin, det.ymin), Point2f(det.xmax, det.ymax));
 }
+#endif
 
 template <typename T>
 bool contains(const std::vector<T>& vec, const T& el) {
@@ -80,6 +85,7 @@ bool contains(const std::vector<T>& vec, const T& el) {
 }
 
 void ObjectTracker::run() {
+#ifdef DEPTHAI_HAVE_OPENCV_SUPPORT
     auto& logger = pimpl->logger;
 
     float trackerThreshold = properties.trackerThreshold;
@@ -92,7 +98,7 @@ void ObjectTracker::run() {
 
     impl::OCSTracker tracker(properties);
 
-    while(isRunning()) {
+    while(mainLoop()) {
         std::shared_ptr<ImgFrame> inputTrackerImg;
         std::shared_ptr<ImgFrame> inputDetectionImg;
         std::shared_ptr<ImgDetections> inputImgDetections;
@@ -100,9 +106,11 @@ void ObjectTracker::run() {
         std::shared_ptr<ObjectTrackerConfig> inputCfg;
 
         bool gotDetections = false;
+        {
+            auto blockEvent = this->inputBlockEvent();
 
-        inputTrackerImg = inputTrackerFrame.get<ImgFrame>();
-        if(inputDetections.has()) {
+            inputTrackerImg = inputTrackerFrame.get<ImgFrame>();
+
             auto detectionsBuffer = inputDetections.get<Buffer>();
             inputImgDetections = std::dynamic_pointer_cast<ImgDetections>(detectionsBuffer);
             inputSpatialImgDetections = std::dynamic_pointer_cast<SpatialImgDetections>(detectionsBuffer);
@@ -118,14 +126,14 @@ void ObjectTracker::run() {
                     logger->debug("Transformation is not set for input detections, inputDetectionFrame is required");
                     inputDetectionImg = inputDetectionFrame.get<ImgFrame>();
                 }
-            } else if(!inputImgDetections && !inputSpatialImgDetections) {
+            } else {
                 logger->error("Input detections is not of type ImgDetections or SpatialImgDetections, skipping tracking");
             }
-        }
-        if(inputConfig.getWaitForMessage()) {
-            inputCfg = inputConfig.get<ObjectTrackerConfig>();
-        } else {
-            inputCfg = inputConfig.tryGet<ObjectTrackerConfig>();
+            if(inputConfig.getWaitForMessage()) {
+                inputCfg = inputConfig.get<ObjectTrackerConfig>();
+            } else {
+                inputCfg = inputConfig.tryGet<ObjectTrackerConfig>();
+            }
         }
 
         if(inputCfg) {
@@ -142,8 +150,13 @@ void ObjectTracker::run() {
 
             ImgTransformation detectionsTransformation = (inputImgDetections ? inputImgDetections->transformation : inputSpatialImgDetections->transformation)
                                                              .value_or(inputDetectionImg->transformation);
+
+            if(!detectionsTransformation.isValid()) {
+                throw std::runtime_error("ImgTransformation must be set on either inputDetections or inputDetectionFrame");
+            }
+
             for(size_t i = 0; i < (inputImgDetections ? inputImgDetections->detections.size() : inputSpatialImgDetections->detections.size()); ++i) {
-                const auto& detection = inputImgDetections ? inputImgDetections->detections[i] : (ImgDetection)inputSpatialImgDetections->detections[i];
+                const auto& detection = inputImgDetections ? inputImgDetections->detections[i] : inputSpatialImgDetections->detections[i].getImgDetection();
                 if(detection.confidence >= trackerThreshold && (detectionLabelsToTrack.empty() || contains(detectionLabelsToTrack, detection.label))) {
                     // Denormalize and remap to inputTrackerImg
                     uint32_t width = detectionsTransformation.getSize().first;
@@ -191,16 +204,23 @@ void ObjectTracker::run() {
         }
         trackletsMsg->transformation = inputTrackerImg->transformation;
 
-        out.send(trackletsMsg);
-        passthroughTrackerFrame.send(inputTrackerImg);
-        if(gotDetections) {
-            passthroughDetections.send(inputImgDetections ? std::dynamic_pointer_cast<Buffer>(inputImgDetections)
-                                                          : std::dynamic_pointer_cast<Buffer>(inputSpatialImgDetections));
-            if(inputDetectionImg) {
-                passthroughDetectionFrame.send(inputDetectionImg);
+        {
+            auto blockEvent = this->outputBlockEvent();
+
+            out.send(trackletsMsg);
+            passthroughTrackerFrame.send(inputTrackerImg);
+            if(gotDetections) {
+                passthroughDetections.send(inputImgDetections ? std::dynamic_pointer_cast<Buffer>(inputImgDetections)
+                                                              : std::dynamic_pointer_cast<Buffer>(inputSpatialImgDetections));
+                if(inputDetectionImg) {
+                    passthroughDetectionFrame.send(inputDetectionImg);
+                }
             }
         }
     }
+#else
+    throw std::runtime_error("ObjectTracker::run() requires OpenCV support. Please compile with OpenCV.");
+#endif
 }
 
 }  // namespace node

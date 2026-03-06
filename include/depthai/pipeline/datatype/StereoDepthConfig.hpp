@@ -1,5 +1,6 @@
 #pragma once
 
+#include <depthai/common/DepthUnit.hpp>
 #include <depthai/common/ProcessorType.hpp>
 #include <depthai/common/optional.hpp>
 #include <vector>
@@ -18,7 +19,7 @@ class StereoDepthConfig : public Buffer {
      * Construct StereoDepthConfig message.
      */
     StereoDepthConfig() = default;
-    virtual ~StereoDepthConfig() = default;
+    virtual ~StereoDepthConfig();
 
     using MedianFilter = filters::params::MedianFilter;
 
@@ -28,10 +29,7 @@ class StereoDepthConfig : public Buffer {
          */
         enum class DepthAlign : int32_t { RECTIFIED_RIGHT, RECTIFIED_LEFT, CENTER };
 
-        /**
-         * Measurement unit for depth data
-         */
-        enum class DepthUnit : int32_t { METER, CENTIMETER, MILLIMETER, INCH, FOOT, CUSTOM };
+        using DepthUnit = dai::DepthUnit;
 
         /**
          * Set the disparity/depth alignment to the perspective of a rectified output, or center it
@@ -750,6 +748,16 @@ class StereoDepthConfig : public Buffer {
     AlgorithmControl::DepthUnit getDepthUnit();
 
     /**
+     * Set custom depth unit multiplier relative to 1 meter.
+     */
+    StereoDepthConfig& setCustomDepthUnitMultiplier(float multiplier);
+
+    /**
+     * Get custom depth unit multiplier relative to 1 meter.
+     */
+    float getCustomDepthUnitMultiplier() const;
+
+    /**
      * Shift input frame by a number of pixels to increase minimum depth.
      * For example shifting by 48 will change effective disparity search range from (0,95] to [48,143].
      * An alternative approach to reducing the minZ.
@@ -814,10 +822,10 @@ class StereoDepthConfig : public Buffer {
 
     dai::ProcessorType filtersBackend = dai::ProcessorType::CPU;
 
-    void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const override {
-        metadata = utility::serialize(*this);
-        datatype = DatatypeEnum::StereoDepthConfig;
-    };
+    void serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const override;
+    DatatypeEnum getDatatype() const override {
+        return DatatypeEnum::StereoDepthConfig;
+    }
     DEPTHAI_SERIALIZE(StereoDepthConfig, algorithmControl, postProcessing, censusTransform, costMatching, costAggregation, confidenceMetrics, filtersBackend);
 };
 

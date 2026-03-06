@@ -77,7 +77,7 @@ struct ColorCameraProperties : PropertiesSerializable<Properties, ColorCameraPro
      */
     enum class ColorOrder : int32_t { BGR, RGB };
 
-    /*
+    /**
      * Initial controls applied to ColorCamera node
      */
     CameraControl initialControl;
@@ -196,7 +196,7 @@ struct ColorCameraProperties : PropertiesSerializable<Properties, ColorCameraPro
     int warpMeshStepWidth = 32;
     int warpMeshStepHeight = 32;
 
-    /*
+    /**
      * List of events to receive, the rest will be ignored
      */
     std::vector<dai::FrameEvent> eventFilter = {dai::FrameEvent::READOUT_START};
@@ -211,6 +211,8 @@ struct ColorCameraProperties : PropertiesSerializable<Properties, ColorCameraPro
      * with both packed/unpacked, but disabled for other cameras like ToF.
      */
     std::optional<bool> rawPacked;
+
+    ~ColorCameraProperties() override;
 };
 
 DEPTHAI_SERIALIZE_EXT(ColorCameraProperties,

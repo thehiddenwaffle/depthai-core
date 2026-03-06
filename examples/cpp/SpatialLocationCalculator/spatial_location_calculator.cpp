@@ -1,24 +1,11 @@
 #include <atomic>
-#include <csignal>
 #include <iostream>
 #include <memory>
 #include <opencv2/opencv.hpp>
 
 #include "depthai/depthai.hpp"
 
-// Global flag for graceful shutdown
-std::atomic<bool> quitEvent(false);
-
-// Signal handler
-void signalHandler(int signum) {
-    quitEvent = true;
-}
-
 int main() {
-    // Set up signal handlers
-    signal(SIGTERM, signalHandler);
-    signal(SIGINT, signalHandler);
-
     try {
         // Create pipeline
         dai::Pipeline pipeline;
@@ -67,7 +54,7 @@ int main() {
 
         cv::Scalar color(255, 255, 255);
 
-        while(pipeline.isRunning() && !quitEvent) {
+        while(pipeline.isRunning()) {
             auto spatialData = xoutSpatialQueue->get<dai::SpatialLocationCalculatorData>();
             std::cout << "Use WASD keys to move ROI!" << std::endl;
 
@@ -78,7 +65,7 @@ int main() {
             std::vector<float> depthValues;
             for(int i = 0; i < frameDepth.rows; i++) {
                 for(int j = 0; j < frameDepth.cols; j++) {
-                    float val = frameDepth.at<float>(i, j);
+                    uint16_t val = frameDepth.at<uint16_t>(i, j);
                     if(val > 0) depthValues.push_back(val);
                 }
             }

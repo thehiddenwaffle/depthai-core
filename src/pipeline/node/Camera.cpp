@@ -1,17 +1,15 @@
 #include "depthai/pipeline/node/Camera.hpp"
+
 // std
-#include <fstream>
 #include <memory>
 #include <stdexcept>
 #include <utility>
 
-#include "depthai/depthai.hpp"
-
-// libraries
-#include "depthai/utility/spimpl.h"
-
-// depthai internal
+// depthai
 #include "depthai/common/CameraBoardSocket.hpp"
+#include "depthai/pipeline/Pipeline.hpp"
+
+// depthai internal utilities
 #include "utility/ErrorMacros.hpp"
 #include "utility/RecordReplayImpl.hpp"
 
@@ -248,20 +246,37 @@ Node::Output* Camera::requestOutput(std::pair<uint32_t, uint32_t> size,
     return pimpl->requestOutput(*this, cap, false);
 }
 
+Node::Output* Camera::requestIspOutput(std::optional<float> fps) {
+    ImgFrameCapability cap;
+
+    if(fps.has_value()) {
+        cap.fps.fixed(fps.value());
+    }
+
+    cap.type = std::nullopt;
+    cap.enableUndistortion = false;
+    cap.ispOutput = true;
+    return pimpl->requestOutput(*this, cap, false);
+}
+
 Node::Output* Camera::requestOutput(const Capability& capability, bool onHost) {
     return pimpl->requestOutput(*this, capability, onHost);
 }
+
 #ifdef DEPTHAI_HAVE_OPENCV_SUPPORT
 Camera& Camera::setMockIsp(ReplayVideo& replay) {
     if(!replay.getReplayVideoFile().empty()) {
         auto [width, height] = replay.getSize();
+        double fps = (double)replay.getFps();
         if(width <= 0 || height <= 0) {
-            const auto& [vidWidth, vidHeight] = utility::getVideoSize(replay.getReplayVideoFile().string());
+            const auto& [vidWidth, vidHeight, vidFps] = utility::getVideoSize(replay.getReplayVideoFile().string());
             width = vidWidth;
             height = vidHeight;
+            fps = vidFps;
         }
         properties.mockIspWidth = width;
         properties.mockIspHeight = height;
+        properties.mockIspFps = fps;
 
         auto device = getParentPipeline().getDefaultDevice();
         if(device) {
@@ -347,14 +362,82 @@ uint32_t Camera::getMaxRequestedHeight() const {
     return height == 0 ? getMaxHeight() : height;
 }
 
-/*
-Camera::Output& Camera::getRecordOutput() {
-    return isp;
+std::shared_ptr<Camera> Camera::setRawNumFramesPool(int num) {
+    properties.numFramesPoolRaw = num;
+    return std::dynamic_pointer_cast<Camera>(shared_from_this());
 }
-Camera::Input& Camera::getReplayInput() {
-    return mockIsp;
+
+std::shared_ptr<Camera> Camera::setMaxSizePoolRaw(int size) {
+    properties.maxSizePoolRaw = size;
+    return std::dynamic_pointer_cast<Camera>(shared_from_this());
 }
-*/
+
+std::shared_ptr<Camera> Camera::setIspNumFramesPool(int num) {
+    properties.numFramesPoolIsp = num;
+    return std::dynamic_pointer_cast<Camera>(shared_from_this());
+}
+
+std::shared_ptr<Camera> Camera::setMaxSizePoolIsp(int size) {
+    properties.maxSizePoolIsp = size;
+    return std::dynamic_pointer_cast<Camera>(shared_from_this());
+}
+
+std::shared_ptr<Camera> Camera::setOutputsNumFramesPool(int num) {
+    properties.numFramesPoolOutputs = num;
+    return std::dynamic_pointer_cast<Camera>(shared_from_this());
+}
+
+std::shared_ptr<Camera> Camera::setOutputsMaxSizePool(int size) {
+    properties.maxSizePoolOutputs = size;
+    return std::dynamic_pointer_cast<Camera>(shared_from_this());
+}
+
+std::shared_ptr<Camera> Camera::setNumFramesPools(int raw, int isp, int outputs) {
+    properties.numFramesPoolRaw = raw;
+    properties.numFramesPoolIsp = isp;
+    properties.numFramesPoolOutputs = outputs;
+    return std::dynamic_pointer_cast<Camera>(shared_from_this());
+}
+
+std::shared_ptr<Camera> Camera::setMaxSizePools(int raw, int isp, int outputs) {
+    properties.maxSizePoolRaw = raw;
+    properties.maxSizePoolIsp = isp;
+    properties.maxSizePoolOutputs = outputs;
+    return std::dynamic_pointer_cast<Camera>(shared_from_this());
+}
+
+int Camera::getRawNumFramesPool() const {
+    return properties.numFramesPoolRaw;
+}
+
+int Camera::getMaxSizePoolRaw() const {
+    return properties.maxSizePoolRaw;
+}
+
+int Camera::getIspNumFramesPool() const {
+    return properties.numFramesPoolIsp;
+}
+
+int Camera::getMaxSizePoolIsp() const {
+    return properties.maxSizePoolIsp;
+}
+
+std::optional<int> Camera::getOutputsNumFramesPool() const {
+    return properties.numFramesPoolOutputs;
+}
+
+std::optional<size_t> Camera::getOutputsMaxSizePool() const {
+    return properties.maxSizePoolOutputs;
+}
+
+std::shared_ptr<Camera> Camera::setImageOrientation(CameraImageOrientation imageOrientation) {
+    properties.imageOrientation = imageOrientation;
+    return std::dynamic_pointer_cast<Camera>(shared_from_this());
+}
+
+CameraImageOrientation Camera::getImageOrientation() const {
+    return properties.imageOrientation;
+}
 
 }  // namespace node
 }  // namespace dai

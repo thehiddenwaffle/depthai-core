@@ -9,8 +9,12 @@ using namespace Catch::Matchers;
     #include <filesystem>
 #endif
 #include <algorithm>
+#include <chrono>
 #include <depthai/depthai.hpp>
+#include <fstream>
+#include <sstream>
 #include <string>
+#include <thread>
 
 #if defined(_WIN32) && defined(_MSC_VER)
     #define NATIVETYPE std::wstring
@@ -58,6 +62,15 @@ bool equalStrings(const U a, const V b) {
     });
 }
 
+static U8STRING makeTempU8PathWithSuffix(const U8STRING& suffix) {
+    std::ostringstream os;
+    os << "dai-fs-" << std::this_thread::get_id() << '-' << std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    auto base = std::filesystem::temp_directory_path() / os.str();
+    U8STRING tmp = base.u8string();
+    tmp += suffix;
+    return tmp;
+}
+
 TEST_CASE("std::filesystem::path utf-8 and native char set handling") {
     const std::filesystem::path emptyPath;
     const std::filesystem::path::string_type emptyString = emptyPath;
@@ -75,10 +88,7 @@ TEST_CASE("std::filesystem::path utf-8 and native char set handling") {
     const NATIVETYPE string3(path3);
     REQUIRE(string3 == MAKENATIVE(PATH3));
 
-    U8CHAR tmp_name4[L_tmpnam];
-    REQUIRE(std::tmpnam(reinterpret_cast<char*>(&tmp_name4[0])) != nullptr);
-    U8STRING string4(tmp_name4);
-    string4 += PATH4;
+    const U8STRING string4 = makeTempU8PathWithSuffix(U8STRING(PATH4));
     const std::filesystem::path path4(string4);
     const std::filesystem::path path4compare(PATH4);
     REQUIRE(u8length(string4.c_str()) == NATIVELENGTH(path4));
@@ -141,10 +151,7 @@ TEST_CASE("std::filesystem::path utf-8 and native char set handling") {
 }
 
 TEST_CASE("std::filesystem::path with NN blobs") {
-    U8CHAR osTmpPathname[L_tmpnam];
-    REQUIRE(std::tmpnam(reinterpret_cast<char*>(&osTmpPathname[0])) != nullptr);
-    U8STRING strPath(osTmpPathname);
-    strPath += PATH4;
+    const U8STRING strPath = makeTempU8PathWithSuffix(U8STRING(PATH4));
     const std::filesystem::path daiPath(strPath);
 
     dai::Pipeline pipeline;
@@ -217,10 +224,7 @@ TEST_CASE("std::filesystem::path with NN blobs") {
 // }
 
 TEST_CASE("std::filesystem::path with CalibrationHandler") {
-    U8CHAR tmpFilename[L_tmpnam];
-    REQUIRE(std::tmpnam(reinterpret_cast<char*>(&tmpFilename[0])) != nullptr);
-    U8STRING strFilename(tmpFilename);
-    strFilename += PATH4;
+    const U8STRING strFilename = makeTempU8PathWithSuffix(U8STRING(PATH4));
     std::filesystem::path daiFilename(strFilename);
 
     CHECK_NOTHROW([&]() {
@@ -320,10 +324,7 @@ TEST_CASE("std::filesystem::path with DeviceBootloader") {
 }
 
 TEST_CASE("std::filesystem::path with AssetManager, StereoDepth") {
-    U8CHAR tmp_name4[L_tmpnam];
-    REQUIRE(std::tmpnam(reinterpret_cast<char*>(&tmp_name4[0])) != nullptr);
-    U8STRING string4(tmp_name4);
-    string4 += PATH4;
+    const U8STRING string4 = makeTempU8PathWithSuffix(U8STRING(PATH4));
     const std::filesystem::path path4(string4);
     REQUIRE_NOTHROW([&]() {
         std::ofstream file(path4);
@@ -337,6 +338,13 @@ TEST_CASE("std::filesystem::path with AssetManager, StereoDepth") {
     pipeline.getAssetManager().remove("camTuning");
     CHECK_NOTHROW(pipeline.setCameraTuningBlobPath(path4));
     pipeline.getAssetManager().remove("camTuning");
+
+    CHECK_NOTHROW(pipeline.setCameraTuningBlobPath(dai::CameraBoardSocket::CAM_A, string4.c_str()));
+    pipeline.getAssetManager().remove("camTuning_0");
+    CHECK_NOTHROW(pipeline.setCameraTuningBlobPath(dai::CameraBoardSocket::CAM_A, string4));
+    pipeline.getAssetManager().remove("camTuning_0");
+    CHECK_NOTHROW(pipeline.setCameraTuningBlobPath(dai::CameraBoardSocket::CAM_A, path4));
+    pipeline.getAssetManager().remove("camTuning_0");
 
     auto depth = pipeline.create<dai::node::StereoDepth>();
     CHECK_NOTHROW(depth->loadMeshFiles(string4.c_str(), string4.c_str()));
@@ -356,6 +364,11 @@ TEST_CASE("std::filesystem::path with AssetManager, StereoDepth") {
     CHECK_NOTHROW(pipeline.setCameraTuningBlobPath(widePath4));
     pipeline.getAssetManager().remove("camTuning");
 
+    CHECK_NOTHROW(pipeline.setCameraTuningBlobPath(dai::CameraBoardSocket::CAM_A, widePath4.c_str()));
+    pipeline.getAssetManager().remove("camTuning_0");
+    CHECK_NOTHROW(pipeline.setCameraTuningBlobPath(dai::CameraBoardSocket::CAM_A, widePath4));
+    pipeline.getAssetManager().remove("camTuning_0");
+
     CHECK_NOTHROW(depth->loadMeshFiles(widePath4.c_str(), widePath4.c_str()));
     depth->getAssetManager().remove("meshLeft");
     depth->getAssetManager().remove("meshRight");
@@ -371,6 +384,7 @@ TEST_CASE("std::filesystem::path with AssetManager, StereoDepth") {
     const auto stdPath4 = std::filesystem::u8path(string4);
     #endif
     CHECK_NOTHROW(pipeline.setCameraTuningBlobPath(stdPath4));
+    CHECK_NOTHROW(pipeline.setCameraTuningBlobPath(dai::CameraBoardSocket::CAM_A, stdPath4));
     CHECK_NOTHROW(depth->loadMeshFiles(stdPath4, stdPath4));
 #endif
 
@@ -378,10 +392,7 @@ TEST_CASE("std::filesystem::path with AssetManager, StereoDepth") {
 }
 
 TEST_CASE("std::filesystem::path with Script") {
-    U8CHAR tmp_name4[L_tmpnam];
-    REQUIRE(std::tmpnam(reinterpret_cast<char*>(&tmp_name4[0])) != nullptr);
-    U8STRING string4(tmp_name4);
-    string4 += PATH4;
+    const U8STRING string4 = makeTempU8PathWithSuffix(U8STRING(PATH4));
     const std::filesystem::path path4(string4);
     REQUIRE_NOTHROW([&]() {
         std::ofstream file(path4);

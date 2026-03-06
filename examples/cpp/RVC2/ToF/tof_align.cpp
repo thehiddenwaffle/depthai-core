@@ -9,7 +9,7 @@
 #include "depthai/depthai.hpp"
 
 // Constants from the Python script
-constexpr float FPS = 5.0f;
+constexpr float FPS = 30.0f;
 const dai::CameraBoardSocket RGB_SOCKET = dai::CameraBoardSocket::CAM_C;
 const dai::CameraBoardSocket TOF_SOCKET = dai::CameraBoardSocket::CAM_A;
 const cv::Size SIZE(640, 400);
@@ -124,15 +124,17 @@ int main() {
     auto tof = pipeline.create<dai::node::ToF>();
     auto sync = pipeline.create<dai::node::Sync>();
     auto align = pipeline.create<dai::node::ImageAlign>();
+    align->setRunOnHost(true);
 
     camRgb->build(RGB_SOCKET);
     tof->build(TOF_SOCKET);
 
     // Set sync threshold
     sync->setSyncThreshold(std::chrono::milliseconds(static_cast<uint32_t>(500 / FPS)));
+    sync->setRunOnHost(true);
 
     // Linking
-    auto cameraOutput = camRgb->requestOutput(std::make_pair(SIZE.width, SIZE.height), dai::ImgFrame::Type::BGR888i, dai::ImgResizeMode::CROP, FPS, true);
+    auto cameraOutput = camRgb->requestOutput(std::make_pair(SIZE.width, SIZE.height), std::nullopt, dai::ImgResizeMode::CROP, FPS, true);
 
     cameraOutput->link(sync->inputs["rgb"]);
     tof->depth.link(align->input);
@@ -140,6 +142,13 @@ int main() {
     sync->inputs["rgb"].setBlocking(false);
     cameraOutput->link(align->inputAlignTo);
     auto syncQueue = sync->out.createOutputQueue();
+
+    auto confFilter = pipeline.create<dai::node::ToFDepthConfidenceFilter>();
+    tof->depth.link(confFilter->depth);
+    tof->amplitude.link(confFilter->amplitude);
+    confFilter->setRunOnHost(true);
+
+    auto filteredDepthQ = confFilter->filteredDepth.createOutputQueue();
 
     // Start the pipeline
     pipeline.start();
@@ -160,6 +169,13 @@ int main() {
 
         auto frameRgb = messageGroup->get<dai::ImgFrame>("rgb");
         auto frameDepth = messageGroup->get<dai::ImgFrame>("depth_aligned");
+        auto filteredDepthMsg = filteredDepthQ->get<dai::ImgFrame>();
+
+        if(filteredDepthMsg) {
+            cv::Mat filteredDepthMat = filteredDepthMsg->getCvFrame();
+            // Display filtered depth map
+            cv::imshow("Filtered Depth", colorizeDepth(filteredDepthMat));
+        }
 
         if(frameRgb && frameDepth) {
             cv::Mat cvFrame = frameRgb->getCvFrame();

@@ -10,6 +10,13 @@
 #endif
 namespace dai {
 
+ImgFrame::~ImgFrame() = default;
+
+void ImgFrame::serialize(std::vector<std::uint8_t>& metadata, DatatypeEnum& datatype) const {
+    metadata = utility::serialize(*this);
+    datatype = DatatypeEnum::ImgFrame;
+}
+
 ImgFrame::ImgFrame() {
     // Set timestamp to now
     setTimestamp(std::chrono::steady_clock::now());
@@ -124,6 +131,10 @@ unsigned int ImgFrame::getSourceHeight() const {
     return sourceFb.height;
 }
 
+ImgTransformation& ImgFrame::getTransformation() {
+    return transformation;
+}
+
 ImgFrame& ImgFrame::setInstanceNum(unsigned int instanceNum) {
     this->instanceNum = instanceNum;
     return *this;
@@ -170,6 +181,11 @@ ImgFrame& ImgFrame::setSourceSize(std::tuple<unsigned int, unsigned int> size) {
 ImgFrame& ImgFrame::setType(Type type) {
     fb.type = type;
     fb.bytesPP = ImgFrame::typeToBpp(fb.type);
+    return *this;
+}
+
+ImgFrame& ImgFrame::setTransformation(const ImgTransformation& transformation) {
+    this->transformation = transformation;
     return *this;
 }
 

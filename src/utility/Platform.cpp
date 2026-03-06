@@ -5,15 +5,20 @@
 
 // Platform specific
 #if defined(_WIN32) || defined(__USE_W32_SOCKETS)
+    #include <iphlpapi.h>
     #include <ws2tcpip.h>
     #ifdef _MSC_VER
         #pragma comment(lib, "Ws2_32.lib")
+        #pragma comment(lib, "IPHLPAPI.lib")
     #endif
 #else
     #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__bsdi__) || defined(__DragonFly__)
         #include <netinet/in.h>
     #endif
     #include <arpa/inet.h>
+    #include <ifaddrs.h>
+
+    #include <cstring>
 #endif
 
 #ifdef __linux__
@@ -21,7 +26,6 @@
 #endif
 
 #if defined(_WIN32) || defined(__USE_W32_SOCKETS)
-    #include <io.h>
     #include <windows.h>
 #endif
 
@@ -65,10 +69,87 @@ std::string getIPv4AddressAsString(std::uint32_t binary) {
     return {address};
 }
 
+std::string getLocalIpAddress() {
+#if defined(_WIN32) || defined(__USE_W32_SOCKETS)
+    std::string result = "127.0.0.1";
+
+    ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    ULONG outBufLen = 0;
+
+    // First call to get required buffer size
+    GetAdaptersAddresses(AF_INET, flags, nullptr, nullptr, &outBufLen);
+    if(outBufLen == 0) {
+        return result;
+    }
+
+    std::unique_ptr<BYTE[]> buffer(new BYTE[outBufLen]);
+    PIP_ADAPTER_ADDRESSES pAddresses = reinterpret_cast<PIP_ADAPTER_ADDRESSES>(buffer.get());
+
+    if(GetAdaptersAddresses(AF_INET, flags, nullptr, pAddresses, &outBufLen) != NO_ERROR) {
+        return result;
+    }
+
+    for(auto* pCurrAddresses = pAddresses; pCurrAddresses; pCurrAddresses = pCurrAddresses->Next) {
+        // Skip adapters that are not up
+        if(pCurrAddresses->OperStatus != IfOperStatusUp) {
+            continue;
+        }
+
+        // Skip loopback adapters
+        if(pCurrAddresses->IfType == IF_TYPE_SOFTWARE_LOOPBACK) {
+            continue;
+        }
+
+        for(auto* pUnicast = pCurrAddresses->FirstUnicastAddress; pUnicast; pUnicast = pUnicast->Next) {
+            auto* addr = pUnicast->Address.lpSockaddr;
+            if(addr->sa_family == AF_INET) {
+                char ipStr[INET_ADDRSTRLEN] = {0};
+                auto* sa_in = reinterpret_cast<sockaddr_in*>(addr);
+                InetNtopA(AF_INET, &(sa_in->sin_addr), ipStr, sizeof(ipStr));
+                std::string ip(ipStr);
+                if(ip != "127.0.0.1") {
+                    return ip;
+                }
+            }
+        }
+    }
+
+    return result;
+#else
+    ifaddrs* ifaddr = nullptr;
+    if(getifaddrs(&ifaddr) == -1) {
+        return "127.0.0.1";
+    }
+
+    std::string result = "127.0.0.1";
+    for(auto* ifa = ifaddr; ifa; ifa = ifa->ifa_next) {
+        if(!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) {
+            continue;
+        }
+
+        auto* sin = reinterpret_cast<sockaddr_in*>(ifa->ifa_addr);
+        char ipStr[INET_ADDRSTRLEN] = {0};
+        inet_ntop(AF_INET, &(sin->sin_addr), ipStr, sizeof(ipStr));
+        std::string ip(ipStr);
+
+        if(ip != "127.0.0.1" && std::strncmp(ifa->ifa_name, "lo", 2) != 0) {
+            result = ip;
+            break;
+        }
+    }
+
+    freeifaddrs(ifaddr);
+    return result;
+#endif
+}
+
 void setThreadName(JoiningThread& thread, const std::string& name) {
 #ifdef __linux__
     auto handle = thread.native_handle();
     pthread_setname_np(handle, name.c_str());
+#else
+    (void)thread;  // unused
+    (void)name;    // unused
 #endif
     return;
 }
@@ -102,19 +183,65 @@ bool checkPathExists(const std::filesystem::path& path, bool directory) {
 
 bool checkWritePermissions(const std::filesystem::path& path) {
 #if defined(_WIN32) || defined(__USE_W32_SOCKETS)
+    // On Windows, using _waccess() checks for existence for directories, not read and write permissions.
+    // We check for write permission by creating a dummy file and deleting it.
+    if(std::filesystem::is_directory(path)) {
+        std::string uniqueName = std::to_string(std::time(nullptr)) + "_random_name";
+        std::filesystem::path probe = path / uniqueName;
+
+        HANDLE h = CreateFileW(probe.c_str(),
+                               GENERIC_WRITE,
+                               0,
+                               nullptr,
+                               CREATE_NEW,  // will fail if it already exists
+                               FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE,
+                               nullptr);
+
+        // Check if the file was created
+        if(h == INVALID_HANDLE_VALUE) {
+            return false;
+        }
+
+        // Close handle and delete the file
+        CloseHandle(h);
+        DeleteFileW(probe.c_str());
+
+        // All checks passed, folder has write permissions
+        return true;
+    }
     // 2 = write permission
-    return (_access(path.string().c_str(), 2) == 0);
+    return (_waccess(path.c_str(), 2) == 0);
 #else
-    return (access(path.string().c_str(), W_OK) == 0);
+    return (access(path.c_str(), W_OK) == 0);
 #endif
 }
 
 bool checkReadPermissions(const std::filesystem::path& path) {
 #if defined(_WIN32) || defined(__USE_W32_SOCKETS)
+    if(std::filesystem::is_directory(path)) {
+        // Try to open the directory for listing
+        HANDLE h = CreateFileW(path.c_str(),
+                               FILE_LIST_DIRECTORY,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               nullptr,
+                               OPEN_EXISTING,
+                               FILE_FLAG_BACKUP_SEMANTICS,
+                               nullptr);
+
+        // Check for valid handle, otherwise, we don't have read permissions
+        if(h == INVALID_HANDLE_VALUE) {
+            return false;
+        }
+
+        // properly close everything
+        CloseHandle(h);
+        return true;
+    }
+
     // 4 = read permission
-    return (_access(path.string().c_str(), 4) == 0);
+    return (_waccess(path.c_str(), 4) == 0);
 #else
-    return (access(path.string().c_str(), R_OK) == 0);
+    return (access(path.c_str(), R_OK) == 0);
 #endif
 }
 
@@ -240,6 +367,19 @@ std::filesystem::path joinPaths(const std::filesystem::path& p1, const std::file
 
 std::filesystem::path getDirFromPath(const std::filesystem::path& path) {
     return std::filesystem::path(std::filesystem::absolute(path).parent_path());
+}
+
+std::vector<std::string> getFilenamesInDirectory(const std::filesystem::path& path) {
+    std::vector<std::string> filenames;
+    if(!std::filesystem::exists(path) || !std::filesystem::is_directory(path)) {
+        throw std::runtime_error("Path does not exist or is not a directory: " + path.string());
+    }
+    for(const auto& entry : std::filesystem::directory_iterator(path)) {
+        if(entry.is_regular_file()) {
+            filenames.push_back(entry.path().filename().string());
+        }
+    }
+    return filenames;
 }
 
 }  // namespace platform

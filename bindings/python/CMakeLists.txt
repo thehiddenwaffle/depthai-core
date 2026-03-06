@@ -42,13 +42,6 @@ option(DEPTHAI_PYTHON_EMBEDDED_MODULE "Create an embeddable module" OFF)
 cmake_dependent_option(DEPTHAI_PYTHON_EMBEDDED_MODULE_TARGET "Create an additional target with pybind embedded module" OFF DEPTHAI_PYTHON_EMBEDDED_MODULE OFF)
 option(DEPTHAI_BUILD_EXT_HOST_NODES "Build the contrib host nodes lib" ON)
 
-set (Python3_FIND_VIRTUALENV ONLY)
-find_package(Python3 REQUIRED COMPONENTS Interpreter Development NumPy)
-set(PYTHON_EXECUTABLE Python3_EXECUTABLE)
-if(NOT NUMPY_INCLUDE_DIRS)
-    set(NUMPY_INCLUDE_DIRS ${Python_NumPy_INCLUDE_DIR})
-endif()
-
 # Add pybind11 dependency
 #add_subdirectory(pybind11-2.5.0)
 
@@ -92,6 +85,7 @@ set(SOURCE_LIST
     src/pipeline/node/MonoCameraBindings.cpp
     src/pipeline/node/StereoDepthBindings.cpp
     src/pipeline/node/NeuralNetworkBindings.cpp
+    src/pipeline/node/GateBindings.cpp
     src/pipeline/node/VideoEncoderBindings.cpp
     src/pipeline/node/ImageManipBindings.cpp
     src/pipeline/node/SPIOutBindings.cpp
@@ -109,13 +103,13 @@ set(SOURCE_LIST
     src/pipeline/node/ToFBindings.cpp
     src/pipeline/node/AprilTagBindings.cpp
     src/pipeline/node/DetectionParserBindings.cpp
+    src/pipeline/node/SegmentationParserBindings.cpp
     src/pipeline/node/WarpBindings.cpp
     src/pipeline/node/SyncBindings.cpp
     src/pipeline/node/BenchmarkBindings.cpp
     src/pipeline/node/UVCBindings.cpp
     src/pipeline/node/ToFBindings.cpp
     src/pipeline/node/PointCloudBindings.cpp
-    src/pipeline/node/SyncBindings.cpp
     src/pipeline/node/MessageDemuxBindings.cpp
     src/pipeline/node/HostNodeBindings.cpp
     src/pipeline/node/RecordBindings.cpp
@@ -123,9 +117,12 @@ set(SOURCE_LIST
     src/pipeline/node/ImageAlignBindings.cpp
     src/pipeline/node/RGBDBindings.cpp
     src/pipeline/node/ImageFiltersBindings.cpp
+    src/pipeline/node/RectificationBindings.cpp
+    src/pipeline/node/NeuralDepthBindings.cpp
+    src/pipeline/node/NeuralAssistedStereoBindings.cpp
     src/pipeline/FilterParamsBindings.cpp
     ${EXT_HOST_NODE_SOURCES}
-
+    src/pipeline/node/VppBindings.cpp
     src/pipeline/datatype/ADatatypeBindings.cpp
     src/pipeline/datatype/AprilTagConfigBindings.cpp
     src/pipeline/datatype/AprilTagsBindings.cpp
@@ -133,15 +130,20 @@ set(SOURCE_LIST
     src/pipeline/datatype/CameraControlBindings.cpp
     src/pipeline/datatype/EdgeDetectorConfigBindings.cpp
     src/pipeline/datatype/FeatureTrackerConfigBindings.cpp
+    src/pipeline/datatype/GateControlBindings.cpp
     src/pipeline/datatype/ThermalConfigBindings.cpp
     src/pipeline/datatype/ToFConfigBindings.cpp
     src/pipeline/datatype/ImageManipConfigBindings.cpp
     src/pipeline/datatype/ImgDetectionsBindings.cpp
+    src/pipeline/datatype/SegmentationParserConfigBindings.cpp
+    src/pipeline/datatype/SegmentationMaskBindings.cpp
     src/pipeline/datatype/ImgFrameBindings.cpp
     src/pipeline/datatype/EncodedFrameBindings.cpp
     src/pipeline/datatype/IMUDataBindings.cpp
+    src/pipeline/datatype/MapDataBindings.cpp
     src/pipeline/datatype/MessageGroupBindings.cpp
     src/pipeline/datatype/NNDataBindings.cpp
+    src/pipeline/datatype/NeuralDepthConfigBindings.cpp
     src/pipeline/datatype/RGBDDataBindings.cpp
     src/pipeline/datatype/SpatialImgDetectionsBindings.cpp
     src/pipeline/datatype/SpatialLocationCalculatorConfigBindings.cpp
@@ -154,9 +156,12 @@ set(SOURCE_LIST
     src/pipeline/datatype/PointCloudConfigBindings.cpp
     src/pipeline/datatype/ObjectTrackerConfigBindings.cpp
     src/pipeline/datatype/PointCloudDataBindings.cpp
+    src/pipeline/datatype/PipelineEventBindings.cpp
+    src/pipeline/datatype/PipelineStateBindings.cpp
     src/pipeline/datatype/TransformDataBindings.cpp
     src/pipeline/datatype/ImageAlignConfigBindings.cpp
     src/pipeline/datatype/ImgAnnotationsBindings.cpp
+    src/pipeline/datatype/VppConfigBindings.cpp
     src/remote_connection/RemoteConnectionBindings.cpp
 
     src/capabilities/CapabilityBindings.cpp
@@ -184,6 +189,14 @@ if(DEPTHAI_RTABMAP_SUPPORT)
     list(APPEND SOURCE_LIST
         src/pipeline/node/RTABMapVIOBindings.cpp
         src/pipeline/node/RTABMapSLAMBindings.cpp
+    )
+endif()
+
+if(DEPTHAI_DYNAMIC_CALIBRATION_SUPPORT)
+    list(APPEND SOURCE_LIST
+        src/pipeline/node/DynamicCalibrationBindings.cpp
+        src/pipeline/datatype/DynamicCalibrationResultsBindings.cpp
+        src/pipeline/datatype/DynamicCalibrationControlBindings.cpp
     )
 endif()
 
@@ -216,25 +229,26 @@ if(WIN32)
 endif()
 
 # Add stubs (pyi) generation step after building bindings
-execute_process(COMMAND "${Python3_EXECUTABLE}" "-c" "from mypy import api" RESULT_VARIABLE error OUTPUT_QUIET ERROR_QUIET )
+execute_process(COMMAND "${PYTHON_EXECUTABLE}" "-c" "from mypy import api" RESULT_VARIABLE error OUTPUT_QUIET ERROR_QUIET)
 if(error OR CMAKE_CROSSCOMPILING)
     message(WARNING "Mypy not available or cross compiling - stubs won't be generated or checked")
-elseif (DEPTHAI_PYTHON_BUILD_DOCSTRINGS)
+else()
     get_target_property(bindings_directory ${TARGET_NAME} LIBRARY_OUTPUT_DIRECTORY)
     if(NOT bindings_directory)
         set(bindings_directory ${CMAKE_CURRENT_BINARY_DIR})
     endif()
+
     message(STATUS "Mypy available, creating and checking stubs. Running with generate_stubs.py ${TARGET_NAME} ${bindings_directory}")
+    if (NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/generate_stubs.py")
+        message(FATAL_ERROR "Cannot add custom build command, ${CMAKE_CURRENT_LIST_DIR}/generate_stubs.py not found")
+    endif ()
     add_custom_command(TARGET ${TARGET_NAME} POST_BUILD COMMAND
         ${CMAKE_COMMAND} -E env
         # Python path (to find compiled module)
         "PYTHONPATH=$<TARGET_FILE_DIR:${TARGET_NAME}>${SYS_PATH_SEPARATOR}$ENV{PYTHONPATH}"
-        ${Python3_EXECUTABLE} "${CMAKE_CURRENT_LIST_DIR}/generate_stubs.py" "${TARGET_NAME}" "$<TARGET_FILE_DIR:${TARGET_NAME}>"
-        DEPENDS "${CMAKE_CURRENT_LIST_DIR}/generate_stubs.py"
+        ${PYTHON_EXECUTABLE} "${CMAKE_CURRENT_LIST_DIR}/generate_stubs.py" "${TARGET_NAME}" "$<TARGET_FILE_DIR:${TARGET_NAME}>" "${PIP_TEMP_LIB_FOLDER}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
-else ()
-    message(WARNING "Docstrings not being built - stubs won't be generated or checked")
 endif()
 
 # Docstring options
@@ -271,10 +285,10 @@ configure_file(cmake/docstring.hpp.in ${DOCSTRINGS_INCLUDE_PLACEHOLDER_PATH})
 if (DEPTHAI_PYTHON_BUILD_DOCSTRINGS)
     include(pybind11-mkdoc)
     set(DEPTHAI_MKDOC_TARGETS depthai::core)
-    if(DEPTHAI_BASALT_SUPPORT)
+    if(DEPTHAI_BASALT_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
         list(APPEND DEPTHAI_MKDOC_TARGETS depthai::basalt)
     endif()
-    if(DEPTHAI_RTABMAP_SUPPORT)
+    if(DEPTHAI_RTABMAP_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
         list(APPEND DEPTHAI_MKDOC_TARGETS depthai::rtabmap)
     endif()
     if (DEPTHAI_PYTHON_EMBEDDED_MODULE_TARGET)
@@ -317,20 +331,20 @@ if (DEPTHAI_BUILD_EXT_HOST_NODES)
 endif ()
 
 set(DEPTHAI_LINK_TARGET depthai::core)
-if(NOT DEPTHAI_MERGED_TARGET)
+if(DEPTHAI_OPENCV_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
     list(APPEND DEPTHAI_LINK_TARGET depthai::opencv)
 endif()
 
-if(DEPTHAI_BASALT_SUPPORT)
+if(DEPTHAI_BASALT_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
     list(APPEND DEPTHAI_LINK_TARGET depthai::basalt)
 endif()
-if(DEPTHAI_RTABMAP_SUPPORT AND DEPTHAI_PCL_SUPPORT)
+if(DEPTHAI_RTABMAP_SUPPORT AND DEPTHAI_PCL_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
     list(APPEND DEPTHAI_LINK_TARGET depthai::rtabmap)
 endif()
 if (DEPTHAI_BUILD_EXT_HOST_NODES)
     list(APPEND DEPTHAI_LINK_TARGET depthai::${TARGET_EXTRA_ALIAS})
 endif ()
-# Link with libraries
+
 target_link_libraries(${TARGET_NAME}
     PUBLIC
         # pybind11
@@ -430,13 +444,14 @@ set(version_command "import find_version as v; print(v.get_package_version())")
 if(DEPTHAI_PYTHON_COMMIT_HASH)
     set(version_command "import find_version as v; print(v.get_package_dev_version('${DEPTHAI_PYTHON_COMMIT_HASH}'))")
 endif()
-execute_process(COMMAND ${Python3_EXECUTABLE} "-c" "${version_command}"
+execute_process(COMMAND ${PYTHON_EXECUTABLE} "-c" "${version_command}"
     OUTPUT_VARIABLE DEPTHAI_PYTHON_VERSION
     OUTPUT_STRIP_TRAILING_WHITESPACE
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
 )
 
 
+string(TIMESTAMP BUILD_DATETIME "%Y-%m-%d %H:%M:%S +0000" UTC)
 target_compile_definitions(${TARGET_NAME}
     PRIVATE
         DEPTHAI_PYTHON_VERSION="${DEPTHAI_PYTHON_VERSION}"
@@ -452,12 +467,17 @@ if(SANITIZE_ADDRESS OR SANITIZE_MEMORY OR SANITIZE_THREAD OR SANITIZE_UNDEFINED)
         execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libclang_rt.asan-${CMAKE_HOST_SYSTEM_PROCESSOR}.so OUTPUT_VARIABLE LIBASAN_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
     elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libasan.so OUTPUT_VARIABLE LIBASAN_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+        execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++.so OUTPUT_VARIABLE LIBSTDCXX_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
     endif()
     # Set preload env variable
     if(APPLE)
         set(ASAN_ENVIRONMENT_VARS "DYLD_INSERT_LIBRARIES=${LIBASAN_PATH}" "ASAN_OPTIONS=leak_check_at_exit=0")
     elseif(UNIX)
-        set(ASAN_ENVIRONMENT_VARS "LD_PRELOAD=${LIBASAN_PATH}" "ASAN_OPTIONS=leak_check_at_exit=0")
+        if(LIBSTDCXX_PATH)
+            set(ASAN_ENVIRONMENT_VARS "LD_PRELOAD=${LIBASAN_PATH}:${LIBSTDCXX_PATH}" "ASAN_OPTIONS=leak_check_at_exit=0")
+        else()
+            set(ASAN_ENVIRONMENT_VARS "LD_PRELOAD=${LIBASAN_PATH}" "ASAN_OPTIONS=leak_check_at_exit=0")
+        endif()
     endif()
     message(STATUS "ASAN environment variables: ${ASAN_ENVIRONMENT_VARS}")
 endif()
