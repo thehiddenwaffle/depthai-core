@@ -963,9 +963,12 @@ TEST_CASE("JSON round-trip preserves IMU calibration params", "[imuCalibration][
     REQUIRE(serialized.at("accelerometerCalibParams").get<std::vector<float>>() == expectedAccelerometer);
     REQUIRE(serialized.at("gyroscopeCalibParams").get<std::vector<float>>() == expectedGyroscope);
     REQUIRE(serialized.at("imuModelParams").at("name").get<std::string>() == expectedImuModel.name);
-    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("x").at("vrw").get<double>() == Catch::Approx(expectedImuModel.accelerometer.x.vrw).margin(1e-6));
-    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("y").at("rrw").get<double>() == Catch::Approx(expectedImuModel.accelerometer.y.rrw).margin(1e-6));
-    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("z").at("bi").get<double>() == Catch::Approx(expectedImuModel.accelerometer.z.bi).margin(1e-6));
+    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("x").at("vrw").get<double>()
+            == Catch::Approx(expectedImuModel.accelerometer.x.vrw).margin(1e-6));
+    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("y").at("rrw").get<double>()
+            == Catch::Approx(expectedImuModel.accelerometer.y.rrw).margin(1e-6));
+    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("z").at("bi").get<double>()
+            == Catch::Approx(expectedImuModel.accelerometer.z.bi).margin(1e-6));
     REQUIRE(serialized.at("imuModelParams").at("gyroscope").at("x").at("arw").get<double>() == Catch::Approx(expectedImuModel.gyroscope.x.arw).margin(1e-6));
     REQUIRE(serialized.at("imuModelParams").at("gyroscope").at("y").at("rrw").get<double>() == Catch::Approx(expectedImuModel.gyroscope.y.rrw).margin(1e-6));
     REQUIRE(serialized.at("imuModelParams").at("gyroscope").at("z").at("bi").get<double>() == Catch::Approx(expectedImuModel.gyroscope.z.bi).margin(1e-6));

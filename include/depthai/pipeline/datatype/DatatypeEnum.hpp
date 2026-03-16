@@ -55,7 +55,8 @@ enum class DatatypeEnum : std::int32_t {
     PipelineState,
     PipelineEventAggregationConfig,
     VppConfig,
-    PacketizedData
+    PacketizedData,
+    COUNT
 };
 bool isDatatypeSubclassOf(DatatypeEnum parent, DatatypeEnum children);
 

@@ -4,9 +4,8 @@
 
 TEST_CASE("DatatypeEnum hierarchy is complete for all enum values", "[datatype][hierarchy]") {
     using dai::DatatypeEnum;
-    const auto lastValue = static_cast<int>(DatatypeEnum::PacketizedData);
-
-    for(int i = 0; i <= lastValue; ++i) {
+    const auto enumCount = static_cast<int>(DatatypeEnum::COUNT);
+    for(int i = 0; i < enumCount; ++i) {
         const auto dt = static_cast<DatatypeEnum>(i);
 
         INFO("DatatypeEnum raw value: " << i);
