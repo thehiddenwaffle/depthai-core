@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 #include "depthai/depthai.hpp"
 
@@ -9,13 +11,18 @@ extern "C" const char* __asan_default_options() {
 }
 
 namespace {
+bool isModelSupported(const std::shared_ptr<dai::DeviceBase>& device, dai::DeviceModelZoo model) {
+    const auto supportedModels = device->getSupportedDeviceModels();
+    return std::find(supportedModels.begin(), supportedModels.end(), model) != supportedModels.end();
+}
+
 void testNeuralDepthModelBasic(dai::DeviceModelZoo model, float minFps) {
     constexpr float kFpsTolerance = 0.2f;
 
     dai::Pipeline pipeline;
     auto device = pipeline.getDefaultDevice();
-    if(!device->isNeuralDepthSupported()) {
-        WARN("Skipping NeuralDepth replay test: device doesn't support NeuralDepth.");
+    if(!isModelSupported(device, model)) {
+        WARN("Skipping NeuralDepth replay test: model " << magic_enum::enum_name(model) << " is not supported on this device.");
         return;
     }
     constexpr float FPS = 60.0f;
@@ -101,10 +108,6 @@ DepthStats computeDepthStats(const std::shared_ptr<dai::ImgFrame>& depthFrame) {
 TEST_CASE("NeuralDepth replay produces expected results") {
     dai::Pipeline pipeline;
     auto device = pipeline.getDefaultDevice();
-    if(!device->isNeuralDepthSupported()) {
-        WARN("Skipping NeuralDepth replay test: device doesn't support NeuralDepth.");
-        return;
-    }
 
     pipeline.enableHolisticReplay(NEURAL_REPLAY_PATH);
     pipeline.setCalibrationData(dai::CalibrationHandler(NEURAL_CALIBRATION_PATH));
@@ -115,16 +118,39 @@ TEST_CASE("NeuralDepth replay produces expected results") {
     auto rightOutput = cameraRight->requestFullResolutionOutput();
 
     auto neuralDepth = pipeline.create<dai::node::NeuralDepth>();
+    SECTION("Test EXTRA_LARGE model") {
+        if(!isModelSupported(device, dai::DeviceModelZoo::NEURAL_DEPTH_EXTRA_LARGE)) {
+            WARN("Skipping NeuralDepth replay test: model NEURAL_DEPTH_EXTRA_LARGE is not supported on this device.");
+            return;
+        }
+        neuralDepth->build(*leftOutput, *rightOutput, dai::DeviceModelZoo::NEURAL_DEPTH_EXTRA_LARGE);
+    }
     SECTION("Test LARGE model") {
+        if(!isModelSupported(device, dai::DeviceModelZoo::NEURAL_DEPTH_LARGE)) {
+            WARN("Skipping NeuralDepth replay test: model NEURAL_DEPTH_LARGE is not supported on this device.");
+            return;
+        }
         neuralDepth->build(*leftOutput, *rightOutput, dai::DeviceModelZoo::NEURAL_DEPTH_LARGE);
     }
     SECTION("Test MEDIUM model") {
+        if(!isModelSupported(device, dai::DeviceModelZoo::NEURAL_DEPTH_MEDIUM)) {
+            WARN("Skipping NeuralDepth replay test: model NEURAL_DEPTH_MEDIUM is not supported on this device.");
+            return;
+        }
         neuralDepth->build(*leftOutput, *rightOutput, dai::DeviceModelZoo::NEURAL_DEPTH_MEDIUM);
     }
     SECTION("Test SMALL model") {
+        if(!isModelSupported(device, dai::DeviceModelZoo::NEURAL_DEPTH_SMALL)) {
+            WARN("Skipping NeuralDepth replay test: model NEURAL_DEPTH_SMALL is not supported on this device.");
+            return;
+        }
         neuralDepth->build(*leftOutput, *rightOutput, dai::DeviceModelZoo::NEURAL_DEPTH_SMALL);
     }
     SECTION("Test NANO model") {
+        if(!isModelSupported(device, dai::DeviceModelZoo::NEURAL_DEPTH_NANO)) {
+            WARN("Skipping NeuralDepth replay test: model NEURAL_DEPTH_NANO is not supported on this device.");
+            return;
+        }
         neuralDepth->build(*leftOutput, *rightOutput, dai::DeviceModelZoo::NEURAL_DEPTH_NANO);
     }
 
@@ -159,10 +185,6 @@ TEST_CASE("NeuralDepth replay produces expected results") {
 TEST_CASE("NeuralDepth replay aligns with StereoDepth medians") {
     dai::Pipeline pipeline;
     auto device = pipeline.getDefaultDevice();
-    if(!device->isNeuralDepthSupported()) {
-        WARN("Skipping NeuralDepth replay comparison test: device doesn't support NeuralDepth.");
-        return;
-    }
 
     pipeline.enableHolisticReplay(NEURAL_REPLAY_PATH);
     pipeline.setCalibrationData(dai::CalibrationHandler(NEURAL_CALIBRATION_PATH));
@@ -173,16 +195,39 @@ TEST_CASE("NeuralDepth replay aligns with StereoDepth medians") {
     auto rightOutput = cameraRight->requestFullResolutionOutput();
 
     auto neuralDepth = pipeline.create<dai::node::NeuralDepth>();
+    SECTION("Test EXTRA_LARGE model") {
+        if(!isModelSupported(device, dai::DeviceModelZoo::NEURAL_DEPTH_EXTRA_LARGE)) {
+            WARN("Skipping NeuralDepth replay comparison test: model NEURAL_DEPTH_EXTRA_LARGE is not supported on this device.");
+            return;
+        }
+        neuralDepth->build(*leftOutput, *rightOutput, dai::DeviceModelZoo::NEURAL_DEPTH_EXTRA_LARGE);
+    }
     SECTION("Test NANO model") {
+        if(!isModelSupported(device, dai::DeviceModelZoo::NEURAL_DEPTH_NANO)) {
+            WARN("Skipping NeuralDepth replay comparison test: model NEURAL_DEPTH_NANO is not supported on this device.");
+            return;
+        }
         neuralDepth->build(*leftOutput, *rightOutput, dai::DeviceModelZoo::NEURAL_DEPTH_NANO);
     }
     SECTION("Test SMALL model") {
+        if(!isModelSupported(device, dai::DeviceModelZoo::NEURAL_DEPTH_SMALL)) {
+            WARN("Skipping NeuralDepth replay comparison test: model NEURAL_DEPTH_SMALL is not supported on this device.");
+            return;
+        }
         neuralDepth->build(*leftOutput, *rightOutput, dai::DeviceModelZoo::NEURAL_DEPTH_SMALL);
     }
     SECTION("Test MEDIUM model") {
+        if(!isModelSupported(device, dai::DeviceModelZoo::NEURAL_DEPTH_MEDIUM)) {
+            WARN("Skipping NeuralDepth replay comparison test: model NEURAL_DEPTH_MEDIUM is not supported on this device.");
+            return;
+        }
         neuralDepth->build(*leftOutput, *rightOutput, dai::DeviceModelZoo::NEURAL_DEPTH_MEDIUM);
     }
     SECTION("Test LARGE model") {
+        if(!isModelSupported(device, dai::DeviceModelZoo::NEURAL_DEPTH_LARGE)) {
+            WARN("Skipping NeuralDepth replay comparison test: model NEURAL_DEPTH_LARGE is not supported on this device.");
+            return;
+        }
         neuralDepth->build(*leftOutput, *rightOutput, dai::DeviceModelZoo::NEURAL_DEPTH_LARGE);
     }
 
@@ -206,6 +251,10 @@ TEST_CASE("NeuralDepth replay aligns with StereoDepth medians") {
         REQUIRE(neuralStats.median > (0.9 * stereoStats.median));
         REQUIRE(neuralStats.median < (1.1 * stereoStats.median));
     }
+}
+
+TEST_CASE("Test NeuralDepth node EXTRA_LARGE model") {
+    testNeuralDepthModelBasic(dai::DeviceModelZoo::NEURAL_DEPTH_EXTRA_LARGE, 5.0f);
 }
 
 TEST_CASE("Test NeuralDepth node NANO model") {

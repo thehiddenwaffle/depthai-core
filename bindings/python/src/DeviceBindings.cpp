@@ -919,7 +919,11 @@ void DeviceBindings::bind(pybind11::module& m, void* pCallstack) {
                 py::gil_scoped_release release;
                 return d.isNeuralDepthSupported();
             },
-            DOC(dai, DeviceBase, isNeuralDepthSupported));
+            DOC(dai, DeviceBase, isNeuralDepthSupported))
+        .def("getSupportedDeviceModels", [](DeviceBase& d) {
+            py::gil_scoped_release release;
+            return d.getSupportedDeviceModels();
+        });
     // Bind constructors
     bindConstructors<Device>(device);
 

@@ -28,6 +28,8 @@ std::shared_ptr<NeuralDepth> NeuralDepth::build(Output& leftInput, Output& right
 
 std::pair<int, int> NeuralDepth::getInputSize(DeviceModelZoo model) {
     switch(model) {
+        case DeviceModelZoo::NEURAL_DEPTH_EXTRA_LARGE:
+            return {1248, 780};
         case DeviceModelZoo::NEURAL_DEPTH_LARGE:
             return {768, 480};
         case DeviceModelZoo::NEURAL_DEPTH_MEDIUM:
