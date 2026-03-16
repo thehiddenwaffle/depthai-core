@@ -21,6 +21,8 @@ HIERARCHY_CHILDREN="${TMP_DIR}/hierarchy_children.txt"
 PARSER_CASES="${TMP_DIR}/parser_cases.txt"
 RETURNED_ENUMS="${TMP_DIR}/returned_enums.txt"
 ENUM_VALUES_NO_ADATATYPE="${TMP_DIR}/enum_values_no_adatype.txt"
+ENUM_VALUES_NO_COUNT="${TMP_DIR}/enum_values_no_count.txt"
+ENUM_VALUES_NO_ADATATYPE_OR_COUNT="${TMP_DIR}/enum_values_no_adatype_or_count.txt"
 
 extract_enum_values() {
     awk '
@@ -75,14 +77,15 @@ main() {
     extract_parser_cases
     extract_returned_datatype_enums
 
-    grep -vx 'ADatatype' "${ENUM_VALUES}" > "${ENUM_VALUES_NO_ADATATYPE}"
+    grep -vx 'COUNT' "${ENUM_VALUES}" > "${ENUM_VALUES_NO_COUNT}"
+    grep -vxE 'ADatatype|COUNT' "${ENUM_VALUES}" > "${ENUM_VALUES_NO_ADATATYPE_OR_COUNT}"
 
     local failed=0
 
-    check_subset "${ENUM_VALUES}" "${HIERARCHY_KEYS}" \
+    check_subset "${ENUM_VALUES_NO_COUNT}" "${HIERARCHY_KEYS}" \
         "DatatypeEnum values missing as keys in DatatypeEnum.cpp hierarchy map." || failed=1
 
-    check_subset "${ENUM_VALUES_NO_ADATATYPE}" "${HIERARCHY_CHILDREN}" \
+    check_subset "${ENUM_VALUES_NO_ADATATYPE_OR_COUNT}" "${HIERARCHY_CHILDREN}" \
         "DatatypeEnum values missing from DatatypeEnum.cpp hierarchy child entries." || failed=1
 
     check_subset "${ENUM_VALUES}" "${PARSER_CASES}" \
