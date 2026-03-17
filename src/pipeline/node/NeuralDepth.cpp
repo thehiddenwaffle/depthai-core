@@ -76,6 +76,8 @@ void NeuralDepth::buildInternal() {
     // Link rectification outputs to neural network
     rectification->output1.link(neuralNetwork->inputs["left"]);
     rectification->output2.link(neuralNetwork->inputs["right"]);
+    neuralNetwork->inputs["left"].setBlocking(true);
+    neuralNetwork->inputs["right"].setBlocking(true);
 
     // Link neural network outputs to nnDataInput
     neuralNetwork->out.link(nnDataInput);
