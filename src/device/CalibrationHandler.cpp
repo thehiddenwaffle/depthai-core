@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <unordered_set>
@@ -25,34 +26,20 @@ namespace dai {
 using namespace matrix;
 
 namespace {
-void invertSe3Matrix4x4InPlace(std::vector<std::vector<float>>& mat) {
-    // Transpose in-place
-    float temp = mat[0][1];
-    mat[0][1] = mat[1][0];
-    mat[1][0] = temp;
 
-    temp = mat[0][2];
-    mat[0][2] = mat[2][0];
-    mat[2][0] = temp;
+std::optional<std::array<float, 3>> lookupHousingEntry(const std::string& productName, HousingCoordinateSystem housingCs) {
+    if(productName.empty()) return std::nullopt;
 
-    temp = mat[1][2];
-    mat[1][2] = mat[2][1];
-    mat[2][1] = temp;
+    const auto& housingData = getHousingCoordinates();
+    auto productIt = housingData.find(productName);
+    if(productIt == housingData.end()) return std::nullopt;
 
-    // The inverse of an SE(3) transformation (R, t) is (R^T, -R^T t)
-    float newTrans[3];
-    for(int i = 0; i < 3; ++i) {
-        newTrans[i] = 0;
-        for(int j = 0; j < 3; ++j) {
-            newTrans[i] -= mat[i][j] * mat[j][3];
-        }
-    }
-    for(int i = 0; i < 3; ++i) mat[i][3] = newTrans[i];
+    auto housingIt = productIt->second.find(housingCs);
+    if(housingIt == productIt->second.end()) return std::nullopt;
+
+    return housingIt->second;
 }
 
-float getDistanceUnitScale(LengthUnit targetUnit, LengthUnit sourceUnit) {
-    return getLengthUnitMultiplier(targetUnit) / getLengthUnitMultiplier(sourceUnit);
-}
 }  // namespace
 
 LengthUnit CalibrationHandler::getEepromTranslationUnits() const {
@@ -61,7 +48,7 @@ LengthUnit CalibrationHandler::getEepromTranslationUnits() const {
 
 void CalibrationHandler::scaleTranslationInPlace(std::vector<std::vector<float>>& mat, LengthUnit unit) const {
     const LengthUnit myUnits = getEepromTranslationUnits();
-    const float scale = getDistanceUnitScale(unit, myUnits);
+    const float scale = getLengthUnitMultiplier(unit) / getLengthUnitMultiplier(myUnits);
     if(scale == 1.0f) return;
     for(int i = 0; i < 3; ++i) {
         mat[i][3] *= scale;
@@ -576,19 +563,15 @@ std::vector<std::vector<float>> CalibrationHandler::getHousingToHousingOrigin(co
     // If using spec translation, try to get it from the database
     // ------------------------------------------------------------
     if(useSpecTranslation) {
-        const auto& housingData = getHousingCoordinates();
-
-        if(!eepromData.productName.empty()) {
-            auto productIt = housingData.find(eepromData.productName);
-            if(productIt != housingData.end()) {
-                auto housingIt = productIt->second.find(housingOrigin);
-                if(housingIt != productIt->second.end()) {
-                    // Get the translation from the database (in mm) and convert to cm
-                    const auto& dbTranslation = housingIt->second;
-                    housingSpecTranslation =
-                        Point3f(-dbTranslation[0] / MM_TO_CM_SCALE, -dbTranslation[1] / MM_TO_CM_SCALE, -dbTranslation[2] / MM_TO_CM_SCALE);
-                }
-            }
+        if(const auto dbTranslation = lookupHousingEntry(eepromData.productName, housingOrigin)) {
+            // Get the translation from the database (in mm) and convert to cm.
+            // The database positions are in the housing frame, but the translation
+            // column of [R | t] must be in the destination (housing-origin) frame:
+            // t = -R * db / scale
+            std::vector<std::vector<float>> c = {
+                {-(*dbTranslation)[0] / MM_TO_CM_SCALE}, {-(*dbTranslation)[1] / MM_TO_CM_SCALE}, {-(*dbTranslation)[2] / MM_TO_CM_SCALE}};
+            auto rc = matMul(housingRotation, c);
+            housingSpecTranslation = Point3f(rc[0][0], rc[1][0], rc[2][0]);
         }
     }
 
@@ -616,22 +599,17 @@ std::vector<std::vector<float>> CalibrationHandler::getHousingToHousingOrigin(co
     // Get the requested specific housing coordinate system translation and subtract it
     // ------------------------------------------------------------
     if(useSpecTranslation && housingCS != HousingCoordinateSystem::AUTO) {
-        const auto& housingData = getHousingCoordinates();
+        if(const auto requestedDbTranslation = lookupHousingEntry(eepromData.productName, housingCS)) {
+            // All housing coordinate systems share the same orientation;
+            // only their origins differ. Build the pure-translation transform
+            // T_SpecificHousing_to_Housing from the database position.
+            std::vector<std::vector<float>> T_SpecificHousingToHousing = {{1.0f, 0.0f, 0.0f, (*requestedDbTranslation)[0] / MM_TO_CM_SCALE},
+                                                                          {0.0f, 1.0f, 0.0f, (*requestedDbTranslation)[1] / MM_TO_CM_SCALE},
+                                                                          {0.0f, 0.0f, 1.0f, (*requestedDbTranslation)[2] / MM_TO_CM_SCALE},
+                                                                          {0.0f, 0.0f, 0.0f, 1.0f}};
 
-        if(!eepromData.productName.empty()) {
-            auto productIt = housingData.find(eepromData.productName);
-            if(productIt != housingData.end()) {
-                auto requestedHousingIt = productIt->second.find(housingCS);
-                if(requestedHousingIt != productIt->second.end()) {
-                    // Get the translation from the database (in mm) and convert to cm
-                    const auto& requestedDbTranslation = requestedHousingIt->second;
-
-                    // Subtract the requested housing translation (converting from mm to cm)
-                    T_HousingToHousingOrigin[0][3] += requestedDbTranslation[0] / MM_TO_CM_SCALE;
-                    T_HousingToHousingOrigin[1][3] += requestedDbTranslation[1] / MM_TO_CM_SCALE;
-                    T_HousingToHousingOrigin[2][3] += requestedDbTranslation[2] / MM_TO_CM_SCALE;
-                }
-            }
+            // Compose: T_SpecificHousing→HousingOrigin = T_Housing→HousingOrigin * T_SpecificHousing→Housing
+            T_HousingToHousingOrigin = matMul(T_HousingToHousingOrigin, T_SpecificHousingToHousing);
         }
     }
 

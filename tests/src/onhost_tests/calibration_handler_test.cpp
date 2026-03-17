@@ -304,6 +304,18 @@ static CalibrationHandler loadHandlerWithHousingRotation() {
     return CalibrationHandler::fromJson(calibJson);
 }
 
+// Same camera chain as loadHandlerWithHousing (identity camera rotations, OAK-4-D-AF database)
+// but with a non-identity housing rotation Rz(90°) to exercise the database rotation path.
+static CalibrationHandler loadHandlerWithHousingRotationAndDB() {
+    auto baseHandler = loadHandlerWithHousing();
+    auto eepromData = baseHandler.getEepromData();
+
+    // Patch only housing rotation to Rz(90°), keep shared fixture data from loadHandlerWithHousing().
+    eepromData.housingExtrinsics.rotationMatrix = {{{0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
+
+    return CalibrationHandler(eepromData);
+}
+
 static CalibrationHandler loadHandlerWithImuExtrinsics() {
     dai::EepromData data;
     data.cameraData[CameraBoardSocket::CAM_A];
@@ -1145,6 +1157,31 @@ TEST_CASE("getHousingCalibration - all cameras with specTranslation", "[housingD
             requireMatrixApproxEqual(result, expected);
         }
     }
+}
+
+TEST_CASE("getHousingCalibration - database with non-identity housing rotation", "[housingDatabase]") {
+    auto handler = loadHandlerWithHousingRotationAndDB();
+
+    // Housing rotation is Rz(90°), so the database translations must be rotated
+    // into the housing-origin frame. Without the rotation, translations would be wrong.
+
+    // CAM_A → FRONT_CAM_A
+    auto camAResult = handler.getHousingCalibration(CameraBoardSocket::CAM_A, dai::HousingCoordinateSystem::FRONT_CAM_A, true);
+    std::vector<std::vector<float>> expectedCamA = {
+        {0.0f, 1.0f, 0.0f, 3.75f}, {-1.0f, 0.0f, 0.0f, 3.75f}, {0.0f, 0.0f, 1.0f, -0.567f}, {0.0f, 0.0f, 0.0f, 1.0f}};
+    requireMatrixApproxEqual(camAResult, expectedCamA, 1e-3);
+
+    // CAM_C → FRONT_CAM_A
+    auto camCResult = handler.getHousingCalibration(CameraBoardSocket::CAM_C, dai::HousingCoordinateSystem::FRONT_CAM_A, true);
+    std::vector<std::vector<float>> expectedCamC = {
+        {0.0f, 1.0f, 0.0f, 3.75f}, {-1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, -0.567f}, {0.0f, 0.0f, 0.0f, 1.0f}};
+    requireMatrixApproxEqual(camCResult, expectedCamC, 1e-3);
+
+    // CAM_B → FRONT_CAM_A
+    auto camBResult = handler.getHousingCalibration(CameraBoardSocket::CAM_B, dai::HousingCoordinateSystem::FRONT_CAM_A, true);
+    std::vector<std::vector<float>> expectedCamB = {
+        {0.0f, 1.0f, 0.0f, 3.75f}, {-1.0f, 0.0f, 0.0f, 7.5f}, {0.0f, 0.0f, 1.0f, -0.567f}, {0.0f, 0.0f, 0.0f, 1.0f}};
+    requireMatrixApproxEqual(camBResult, expectedCamB, 1e-3);
 }
 
 TEST_CASE("getHousingCalibration - All cameras to housing with specTranslation", "[getHousingCalibration]") {
