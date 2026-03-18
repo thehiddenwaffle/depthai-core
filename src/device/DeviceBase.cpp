@@ -1441,7 +1441,11 @@ dai::CrashDump DeviceBase::getState() {
     // There is a small chance retrieving the state may hang,
     // so it's not auto-cleared in the same call,
     // allowing to be returned as a crashdump in the next run
-    pimpl->rpcCall("clearCrashDump");
+    try {
+        pimpl->rpcCall("clearCrashDump");
+    } catch(const std::exception& ex) {
+        pimpl->logger.warn("Failed to clear crash dump after getState(): {}", ex.what());
+    }
     return state;
 }
 
@@ -1552,14 +1556,17 @@ void DeviceBase::setCalibration(CalibrationHandler calibrationDataHandler) {
 }
 
 std::shared_ptr<CalibrationHandler> DeviceBase::tryGetCalibration() {
-    bool success;
-    std::string errorMsg;
-    dai::EepromData eepromData;
-    std::tie(success, errorMsg, eepromData) = pimpl->rpcCall("getCalibration").as<std::tuple<bool, std::string, dai::EepromData>>();
-    if(!success) {
+    try {
+        bool success;
+        std::string errorMsg;
+        dai::EepromData eepromData;
+        std::tie(success, errorMsg, eepromData) = pimpl->rpcCall("getCalibration").as<std::tuple<bool, std::string, dai::EepromData>>();
+        if(!success) return nullptr;
+        return std::make_shared<CalibrationHandler>(eepromData);
+    } catch(const std::exception& ex) {
+        pimpl->logger.debug("tryGetCalibration failed: {}", ex.what());
         return nullptr;
     }
-    return std::make_shared<CalibrationHandler>(eepromData);
 }
 
 CalibrationHandler DeviceBase::getCalibration() {
