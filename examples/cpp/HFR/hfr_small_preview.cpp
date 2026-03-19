@@ -42,7 +42,7 @@ int main() {
     auto* output = cam->requestOutput(std::make_pair(250U, 250U));
     output->link(benchmarkIn->input);
 
-    auto outputQueue = output->createOutputQueue();
+    auto outputQueue = output->createOutputQueue(1, false);
 
     pipeline.start();
 

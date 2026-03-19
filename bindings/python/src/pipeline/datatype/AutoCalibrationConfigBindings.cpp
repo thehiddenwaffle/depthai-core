@@ -33,6 +33,15 @@ void bind_auto_calibration_config(pybind11::module& m, void* pCallstack) {
 
     // 4. Define methods and properties
     dynCalibConfig.def(py::init<>())
+        .def(py::init<AutoCalibrationConfig::Mode, int, double, double, unsigned int, unsigned int, int, bool>(),
+             "mode"_a,
+             "sleepingTime"_a,
+             "calibrationConfidenceThreshold"_a,
+             "dataConfidenceThreshold"_a,
+             "maxIterations"_a,
+             "maxImagesPerRecalibration"_a,
+             "validationSetSize"_a,
+             "flashCalibration"_a)
         .def_readwrite("mode", &AutoCalibrationConfig::mode, DOC(dai, AutoCalibrationConfig, mode))
         .def_readwrite("sleepingTime", &AutoCalibrationConfig::sleepingTime, DOC(dai, AutoCalibrationConfig, sleepingTime))
         .def_readwrite("calibrationConfidenceThreshold",

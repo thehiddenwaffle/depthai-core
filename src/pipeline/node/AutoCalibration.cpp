@@ -1,8 +1,8 @@
 #include "depthai/pipeline/node/AutoCalibration.hpp"
 
-#include <cstddef>
 #include <pipeline/ThreadedNodeImpl.hpp>
 #include <pipeline/datatype/MessageGroup.hpp>
+#include <stdexcept>
 
 #include "depthai/pipeline/InputQueue.hpp"
 #include "depthai/pipeline/node/internal/XLinkOut.hpp"
@@ -12,8 +12,8 @@ namespace node {
 
 constexpr int MAX_FAILS_PER_RECALIBRATION_DEFAULT = 5;
 constexpr int GATE_FPS_DEFAULT = 5;
-constexpr std::size_t BYTES_PER_SECOND_LIMIT_DEFAULT = static_cast<std::size_t>(GATE_FPS_DEFAULT) * 1280u * 800u * 2u;
-constexpr std::size_t PACKET_SIZE_DEFAULT = 100000u;
+constexpr int BYTES_PER_SECOND_LIMIT_DEFAULT = GATE_FPS_DEFAULT * 1280 * 800 * 2;
+constexpr int PACKET_SIZE_DEFAULT = 100000;
 
 void AutoCalibration::logReport(const Report& report, unsigned int iteration) const {
     // Define a lambda or a small helper to route to the correct spdlog method
@@ -83,11 +83,16 @@ void addPoolsForAutoCalibration(const std::shared_ptr<Camera>& camera, int addit
     if(numIspPool > 0) {
         camera->setIspNumFramesPool(numIspPool + additionalPools);
     } else {
+        // If getIspNumFramesPool() is unavailable/non-positive, use a known-safe baseline via setIspNumFramesPool().
         camera->setIspNumFramesPool(6);
     }
 }
 
 std::shared_ptr<AutoCalibration> AutoCalibration::build(const std::shared_ptr<Camera>& cameraLeft, const std::shared_ptr<Camera>& cameraRight) {
+    if(!cameraLeft || !cameraRight) {
+        throw std::invalid_argument("AutoCalibration::build requires non-null camera pointers");
+    }
+
     sync->setRunOnHost(false);
     gate->setRunOnHost(false);
     auto outputCameraLeft = cameraLeft->requestIspOutput();
@@ -124,8 +129,12 @@ bool AutoCalibration::runOnHost() const {
 
 void AutoCalibration::postBuildStage() {
     auto xlinkBridge = gate->output.getXLinkBridge();
-    xlinkBridge->xLinkOut->setBytesPerSecondLimit(static_cast<int>(BYTES_PER_SECOND_LIMIT_DEFAULT));
-    xlinkBridge->xLinkOut->setPacketSize(static_cast<int>(PACKET_SIZE_DEFAULT));
+    if(!xlinkBridge || !xlinkBridge->xLinkOut) {
+        logger->warn("AutoCalibration: missing XLink bridge; skipping output throttling setup.");
+        return;
+    }
+    xlinkBridge->xLinkOut->setBytesPerSecondLimit(BYTES_PER_SECOND_LIMIT_DEFAULT);
+    xlinkBridge->xLinkOut->setPacketSize(PACKET_SIZE_DEFAULT);
     xlinkBridge->xLinkOut->input.setMaxSize(1);
     xlinkBridge->xLinkOut->input.setBlocking(false);
 }
@@ -219,6 +228,10 @@ std::shared_ptr<dai::CalibrationHandler> AutoCalibration::getNewCalibration(unsi
    if calibration OK -> set calibration
 **/
 bool AutoCalibration::updateCalibrationProcess(std::shared_ptr<dai::CalibrationHandler> calibration) {
+    if(initialConfig->validationSetSize < 0) {
+        throw std::invalid_argument("AutoCalibration: validationSetSize must be non-negative");
+    }
+
     unsigned int numIterations = 0;
     while(numIterations < initialConfig->maxIterations && mainLoop()) {
         auto startTime = std::chrono::steady_clock::now();  // Start timer
@@ -243,7 +256,7 @@ bool AutoCalibration::updateCalibrationProcess(std::shared_ptr<dai::CalibrationH
             }
         } else {
             logger->info("=== AutoCalibration: loading validation data ({}) ---", initialConfig->validationSetSize);
-            loadData(initialConfig->validationSetSize);
+            loadData(static_cast<unsigned int>(initialConfig->validationSetSize));
             auto metrics = getMetrics(calibration);
             report.dataConfidence = metrics->dataConfidence;
             report.calibrationConfidence = metrics->calibrationConfidence;
@@ -313,13 +326,13 @@ bool AutoCalibration::validateIncomingData() {
         auto messageGroup = gateOutput.get<MessageGroup>(waitingTime, timedout);
 
         if(!timedout && messageGroup) {
-            if(!messageGroup->get<dai::ImgFrame>(leftInputName) || !messageGroup->get<dai::ImgFrame>(rightInputName)) {
+            auto leftImgFrame = messageGroup->get<ImgFrame>(leftInputName);
+            auto rightImgFrame = messageGroup->get<ImgFrame>(rightInputName);
+
+            if(!leftImgFrame || !rightImgFrame) {
                 logger->warn("AutoCalibration: Not initialized - Empty message groups.");
                 return false;
             }
-
-            auto leftImgFrame = messageGroup->get<ImgFrame>(leftInputName);
-            auto rightImgFrame = messageGroup->get<ImgFrame>(rightInputName);
 
             if(leftImgFrame->getWidth() != rightImgFrame->getWidth() || leftImgFrame->getHeight() != rightImgFrame->getHeight()) {
                 logger->warn("AutoCalibration: Not initialized - currently supports only sensors with same resolutions.");

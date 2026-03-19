@@ -1,6 +1,7 @@
 import cv2 as cv
 import numpy as np
 import depthai as dai
+import warnings
 
 
 def showDepth(depthFrame, windowName="Depth", minDistance=500, maxDistance=5000,
@@ -17,6 +18,10 @@ def showDepth(depthFrame, windowName="Depth", minDistance=500, maxDistance=5000,
         useLog (bool): Apply logarithmic scaling for better visual contrast.
     """
     if maxDistance <= minDistance:
+        warnings.warn(
+            f"Invalid distance range: maxDistance ({maxDistance}) <= minDistance ({minDistance})",
+            stacklevel=2,
+        )
         return
 
     # Convert to float for processing

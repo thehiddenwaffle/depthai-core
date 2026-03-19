@@ -1445,7 +1445,11 @@ dai::CrashDump DeviceBase::getState() {
     // There is a small chance retrieving the state may hang,
     // so it's not auto-cleared in the same call,
     // allowing to be returned as a crashdump in the next run
-    pimpl->rpcCall("clearCrashDump");
+    try {
+        pimpl->rpcCall("clearCrashDump");
+    } catch(const std::exception& ex) {
+        pimpl->logger.warn("Failed to clear crash dump after getState(): {}", ex.what());
+    }
     return state;
 }
 
