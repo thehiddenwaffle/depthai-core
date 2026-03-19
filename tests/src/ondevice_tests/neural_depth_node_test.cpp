@@ -23,7 +23,7 @@ void testNeuralDepthModelBasic(dai::DeviceModelZoo model, float minFps) {
     dai::Pipeline pipeline;
     auto device = pipeline.getDefaultDevice();
     if(!isModelSupported(device, model)) {
-        WARN("Skipping NeuralDepth replay test: model " << magic_enum::enum_name(model) << " is not supported on this device.");
+        WARN("Skipping NeuralDepth live-camera test: model " << magic_enum::enum_name(model) << " is not supported on this device.");
         return;
     }
     constexpr float FPS = 60.0f;
