@@ -304,6 +304,18 @@ static CalibrationHandler loadHandlerWithHousingRotation() {
     return CalibrationHandler::fromJson(calibJson);
 }
 
+// Same camera chain as loadHandlerWithHousing (identity camera rotations, OAK-4-D-AF database)
+// but with a non-identity housing rotation Rz(90°) to exercise the database rotation path.
+static CalibrationHandler loadHandlerWithHousingRotationAndDB() {
+    auto baseHandler = loadHandlerWithHousing();
+    auto eepromData = baseHandler.getEepromData();
+
+    // Patch only housing rotation to Rz(90°), keep shared fixture data from loadHandlerWithHousing().
+    eepromData.housingExtrinsics.rotationMatrix = {{{0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}}};
+
+    return CalibrationHandler(eepromData);
+}
+
 static CalibrationHandler loadHandlerWithImuExtrinsics() {
     dai::EepromData data;
     data.cameraData[CameraBoardSocket::CAM_A];
@@ -336,9 +348,65 @@ static CalibrationHandler loadValidHandler() {
     return CalibrationHandler::fromJson(loadValidCalibJson());
 }
 
+static CalibrationHandler loadLegacyHandlerWithCamera() {
+    dai::EepromData data;
+    data.version = 3;
+
+    dai::CameraInfo cam;
+    cam.width = 1920;
+    cam.height = 1080;
+    cam.lensPosition = 120;
+    cam.specHfovDeg = 68.0f;
+    cam.cameraType = CameraModel::Perspective;
+    cam.intrinsicMatrix = {{1000.0f, 0.0f, 960.0f}, {0.0f, 1000.0f, 540.0f}, {0.0f, 0.0f, 1.0f}};
+    cam.extrinsics.rotationMatrix = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
+    cam.extrinsics.toCameraSocket = CameraBoardSocket::AUTO;
+
+    data.cameraData[CameraBoardSocket::CAM_A] = cam;
+    return CalibrationHandler(data);
+}
+
+TEST_CASE("Calibration availability depends on version and camera entries", "[hasCalibrationData][hasCameraCalibration]") {
+    dai::EepromData data;
+    data.version = 3;
+    data.cameraData[CameraBoardSocket::CAM_A] = dai::CameraInfo{};
+
+    CalibrationHandler legacy(data);
+    REQUIRE_FALSE(legacy.hasCalibrationData());
+    REQUIRE_FALSE(legacy.hasCameraCalibration(CameraBoardSocket::CAM_A));
+
+    data.version = 7;
+    CalibrationHandler valid(data);
+    REQUIRE(valid.hasCalibrationData());
+    REQUIRE(valid.hasCameraCalibration(CameraBoardSocket::CAM_A));
+    REQUIRE_FALSE(valid.hasCameraCalibration(CameraBoardSocket::CAM_B));
+}
+
+TEST_CASE("Legacy calibration version blocks camera-level getters", "[legacyCalibration][getFov][getLensPosition][getDistortionModel][getCameraExtrinsics]") {
+    auto handler = loadLegacyHandlerWithCamera();
+
+    REQUIRE_THROWS_WITH(handler.getFov(CameraBoardSocket::CAM_A, true),
+                        Catch::Matchers::ContainsSubstring("There is no Camera data available corresponding to the requested cameraID"));
+    REQUIRE_THROWS_WITH(handler.getLensPosition(CameraBoardSocket::CAM_A),
+                        Catch::Matchers::ContainsSubstring("There is no Camera data available corresponding to the requested cameraID"));
+    REQUIRE_THROWS_WITH(handler.getDistortionModel(CameraBoardSocket::CAM_A),
+                        Catch::Matchers::ContainsSubstring("There is no Camera data available corresponding to the requested cameraID"));
+    REQUIRE_THROWS_WITH(handler.getCameraExtrinsics(CameraBoardSocket::CAM_A, CameraBoardSocket::CAM_A, false),
+                        Catch::Matchers::ContainsSubstring("requested source cameraId"));
+}
+
+TEST_CASE("Missing camera intrinsics reports calibration guidance", "[getCameraIntrinsics]") {
+    dai::EepromData data;
+    data.version = 7;
+    CalibrationHandler handler(data);
+
+    REQUIRE_THROWS_WITH(handler.getCameraIntrinsics(CameraBoardSocket::CAM_A, 640, 480),
+                        Catch::Matchers::ContainsSubstring("Camera data available for the requested cameraID"));
+}
+
 TEST_CASE("Invalid camera ID throws", "[getCameraIntrinsics]") {
     auto handler = loadInvalidHandler();
-    REQUIRE_THROWS_AS(handler.getCameraIntrinsics(CameraBoardSocket::CAM_E, 1280, 800), std::out_of_range);
+    REQUIRE_THROWS_AS(handler.getCameraIntrinsics(CameraBoardSocket::CAM_E, 1280, 800), std::runtime_error);
 }
 
 TEST_CASE("Invalid camera resolution", "[getCameraIntrinsics]") {
@@ -963,9 +1031,12 @@ TEST_CASE("JSON round-trip preserves IMU calibration params", "[imuCalibration][
     REQUIRE(serialized.at("accelerometerCalibParams").get<std::vector<float>>() == expectedAccelerometer);
     REQUIRE(serialized.at("gyroscopeCalibParams").get<std::vector<float>>() == expectedGyroscope);
     REQUIRE(serialized.at("imuModelParams").at("name").get<std::string>() == expectedImuModel.name);
-    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("x").at("vrw").get<double>() == Catch::Approx(expectedImuModel.accelerometer.x.vrw).margin(1e-6));
-    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("y").at("rrw").get<double>() == Catch::Approx(expectedImuModel.accelerometer.y.rrw).margin(1e-6));
-    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("z").at("bi").get<double>() == Catch::Approx(expectedImuModel.accelerometer.z.bi).margin(1e-6));
+    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("x").at("vrw").get<double>()
+            == Catch::Approx(expectedImuModel.accelerometer.x.vrw).margin(1e-6));
+    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("y").at("rrw").get<double>()
+            == Catch::Approx(expectedImuModel.accelerometer.y.rrw).margin(1e-6));
+    REQUIRE(serialized.at("imuModelParams").at("accelerometer").at("z").at("bi").get<double>()
+            == Catch::Approx(expectedImuModel.accelerometer.z.bi).margin(1e-6));
     REQUIRE(serialized.at("imuModelParams").at("gyroscope").at("x").at("arw").get<double>() == Catch::Approx(expectedImuModel.gyroscope.x.arw).margin(1e-6));
     REQUIRE(serialized.at("imuModelParams").at("gyroscope").at("y").at("rrw").get<double>() == Catch::Approx(expectedImuModel.gyroscope.y.rrw).margin(1e-6));
     REQUIRE(serialized.at("imuModelParams").at("gyroscope").at("z").at("bi").get<double>() == Catch::Approx(expectedImuModel.gyroscope.z.bi).margin(1e-6));
@@ -1145,6 +1216,31 @@ TEST_CASE("getHousingCalibration - all cameras with specTranslation", "[housingD
             requireMatrixApproxEqual(result, expected);
         }
     }
+}
+
+TEST_CASE("getHousingCalibration - database with non-identity housing rotation", "[housingDatabase]") {
+    auto handler = loadHandlerWithHousingRotationAndDB();
+
+    // Housing rotation is Rz(90°), so the database translations must be rotated
+    // into the housing-origin frame. Without the rotation, translations would be wrong.
+
+    // CAM_A → FRONT_CAM_A
+    auto camAResult = handler.getHousingCalibration(CameraBoardSocket::CAM_A, dai::HousingCoordinateSystem::FRONT_CAM_A, true);
+    std::vector<std::vector<float>> expectedCamA = {
+        {0.0f, 1.0f, 0.0f, 3.75f}, {-1.0f, 0.0f, 0.0f, 3.75f}, {0.0f, 0.0f, 1.0f, -0.567f}, {0.0f, 0.0f, 0.0f, 1.0f}};
+    requireMatrixApproxEqual(camAResult, expectedCamA, 1e-3);
+
+    // CAM_C → FRONT_CAM_A
+    auto camCResult = handler.getHousingCalibration(CameraBoardSocket::CAM_C, dai::HousingCoordinateSystem::FRONT_CAM_A, true);
+    std::vector<std::vector<float>> expectedCamC = {
+        {0.0f, 1.0f, 0.0f, 3.75f}, {-1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, -0.567f}, {0.0f, 0.0f, 0.0f, 1.0f}};
+    requireMatrixApproxEqual(camCResult, expectedCamC, 1e-3);
+
+    // CAM_B → FRONT_CAM_A
+    auto camBResult = handler.getHousingCalibration(CameraBoardSocket::CAM_B, dai::HousingCoordinateSystem::FRONT_CAM_A, true);
+    std::vector<std::vector<float>> expectedCamB = {
+        {0.0f, 1.0f, 0.0f, 3.75f}, {-1.0f, 0.0f, 0.0f, 7.5f}, {0.0f, 0.0f, 1.0f, -0.567f}, {0.0f, 0.0f, 0.0f, 1.0f}};
+    requireMatrixApproxEqual(camBResult, expectedCamB, 1e-3);
 }
 
 TEST_CASE("getHousingCalibration - All cameras to housing with specTranslation", "[getHousingCalibration]") {
