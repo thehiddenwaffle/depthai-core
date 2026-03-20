@@ -865,6 +865,13 @@ void DeviceBindings::bind(pybind11::module& m, void* pCallstack) {
                 return d.isNeuralDepthSupported();
             },
             DOC(dai, DeviceBase, isNeuralDepthSupported))
+        .def(
+            "getSupportedDeviceModels",
+            [](DeviceBase& d) {
+                py::gil_scoped_release release;
+                return d.getSupportedDeviceModels();
+            },
+            DOC(dai, DeviceBase, getSupportedDeviceModels))
         .def("getPlatform", &DeviceBase::getPlatform, DOC(dai, DeviceBase, getPlatform))
         .def("getPlatformAsString", &DeviceBase::getPlatformAsString, DOC(dai, DeviceBase, getPlatformAsString));
 
