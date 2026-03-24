@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -41,6 +42,38 @@ namespace {
         } else {
             throw std::runtime_error("Unknown sync type");
         }
+    }
+
+    double calculate_mean(std::vector<std::uint64_t> values) {
+        std::uint64_t sum = std::accumulate(values.begin(), values.end(), 0);
+        return double(sum) / double(values.size());
+    }
+
+    double percentile_linear(std::vector<std::uint64_t> values, double q)
+    {
+        if (values.empty()) {
+            throw std::invalid_argument("percentile_linear: input vector must not be empty");
+        }
+
+        if (!std::isfinite(q) || q < 0.0 || q > 100.0) {
+            throw std::invalid_argument("percentile_linear: q must be a finite value in [0, 100]");
+        }
+
+        std::sort(values.begin(), values.end());
+
+        if (values.size() == 1) {
+            return static_cast<double>(values[0]);
+        }
+
+        const double pos = (q / 100.0) * static_cast<double>(values.size() - 1);
+        const std::size_t lower = static_cast<std::size_t>(std::floor(pos));
+        const std::size_t upper = static_cast<std::size_t>(std::ceil(pos));
+        const double fraction = pos - static_cast<double>(lower);
+
+        const double lower_value = static_cast<double>(values[lower]);
+        const double upper_value = static_cast<double>(values[upper]);
+
+        return lower_value + (upper_value - lower_value) * fraction;
     }
 }
 
@@ -277,6 +310,8 @@ int testFsync(
 
     std::optional<std::chrono::time_point<std::chrono::steady_clock>> initialSyncTime;
 
+    std::vector<uint64_t> deltas;
+
     bool waitingForInitialSync = true;
     std::atomic_bool running{true};
 
@@ -361,6 +396,10 @@ int testFsync(
 
             bool syncStatus = abs(deltaUs) < syncThresholdSec * 1e6;
 
+            if (syncType == SyncType::PTP && syncStatus && !waitingForInitialSync) {
+                deltas.emplace_back(deltaUs);
+            }
+
             if(!syncStatus && waitingForInitialSync) {
                 auto endTime = std::chrono::steady_clock::now();
                 auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(endTime - initialSyncTime.value()).count();
@@ -378,6 +417,29 @@ int testFsync(
         }
     }
 
+    if (syncType == SyncType::PTP) {
+        REQUIRE_MSG(deltas.size() > 100, "[FPS=" << targetFps << "] Not enough frames left after stabilization period (expected at least 100, got " << deltas.size() << ").");
+
+        double meanDelta = calculate_mean(deltas);
+        double p99Delta = percentile_linear(deltas, 99.0);
+
+        std::cout << "=== Stats" << std::endl;
+        std::cout << "   [FPS=" << targetFps << "] # of frames used for stats caluculation: " << deltas.size() << std::endl;
+        std::cout << "   [FPS=" << targetFps << "] Mean frane delta: " << meanDelta*1e3 << " ms" << std::endl;
+        std::cout << "   [FPS=" << targetFps << "] p99 frame delta: " << p99Delta*1e3 << " ms" << std::endl;
+
+        double deltaMeanThreshold = 1e-3;
+        double deltaP99Threshold = 2e-3;
+
+        if (targetFps > 30) {
+            deltaMeanThreshold = 10e-3;
+            deltaP99Threshold = 10e-3;
+        }
+
+        REQUIRE_MSG(meanDelta < deltaMeanThreshold, "[FPS=" << targetFps << "] Mean value of frame deltas above " << deltaMeanThreshold*1e3 << " ms (" << meanDelta*1e3 << " ms)");
+        REQUIRE_MSG(p99Delta < deltaP99Threshold, "[FPS=" << targetFps << "] p99 metric does not meet " << deltaP99Threshold*1e3 << " ms (" << p99Delta*1e3 << " ms)");
+    }
+
     return 0;
 }
 
@@ -386,13 +448,71 @@ TEST_CASE("Test Multi-device external frame sync with different FPS values", "[f
     // auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f, 120.0f, 240.0f, 300.0f, 600.0f);
     auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f);
     CAPTURE(fps);
-    testFsync(fps, 1e-3, 60, 10, 4, SyncType::EXTERNAL);
+    testFsync(fps, 1e-3, 180, 10, 4, SyncType::EXTERNAL);
 }
+
+
+static void expect_percentile(
+    const std::vector<uint64_t>& values,
+    double q,
+    double expected)
+{
+    using Catch::Matchers::WithinAbs;
+    REQUIRE_THAT(percentile_linear(values, q), WithinAbs(expected, 1e-12));
+}
+
+TEST_CASE("percentile_linear matches known NumPy linear outputs", "[percentile]") {
+    SECTION("basic evenly spaced input") {
+        expect_percentile({1, 2, 3, 4},   0.0,   1.0);
+        expect_percentile({1, 2, 3, 4},  25.0,   1.75);
+        expect_percentile({1, 2, 3, 4},  50.0,   2.5);
+        expect_percentile({1, 2, 3, 4},  75.0,   3.25);
+        expect_percentile({1, 2, 3, 4}, 100.0,   4.0);
+    }
+
+    SECTION("unsorted input") {
+        expect_percentile({4, 1, 3, 2}, 50.0, 2.5);
+    }
+
+    SECTION("odd-length input") {
+        expect_percentile({10, 20, 30, 40, 50}, 40.0, 26.0);
+    }
+
+    SECTION("duplicates") {
+        expect_percentile({8, 1, 8, 4, 4},   0.0, 1.0);
+        expect_percentile({8, 1, 8, 4, 4},  10.0, 2.2);
+        expect_percentile({8, 1, 8, 4, 4},  25.0, 4.0);
+        expect_percentile({8, 1, 8, 4, 4},  50.0, 4.0);
+        expect_percentile({8, 1, 8, 4, 4},  75.0, 8.0);
+        expect_percentile({8, 1, 8, 4, 4}, 100.0, 8.0);
+    }
+
+    SECTION("single element") {
+        expect_percentile({42},   0.0, 42.0);
+        expect_percentile({42},  50.0, 42.0);
+        expect_percentile({42}, 100.0, 42.0);
+    }
+}
+
+TEST_CASE("percentile_linear rejects invalid input", "[percentile]") {
+    SECTION("empty vector") {
+        REQUIRE_THROWS_AS(percentile_linear({}, 50.0), std::invalid_argument);
+    }
+
+    SECTION("q below range") {
+        REQUIRE_THROWS_AS(percentile_linear({1, 2, 3}, -1.0), std::invalid_argument);
+    }
+
+    SECTION("q above range") {
+        REQUIRE_THROWS_AS(percentile_linear({1, 2, 3}, 101.0), std::invalid_argument);
+    }
+}
+
 
 TEST_CASE("Test Multi-device PTP frame sync with different FPS values", "[fsync]") {
     // Specify a list of FPS values to test with.
     // auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f, 120.0f, 240.0f, 300.0f, 600.0f);
     auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f);
     CAPTURE(fps);
-    testFsync(fps, 1e-3, 60, 15, 60, SyncType::PTP);
+    testFsync(fps, 1e-3, 180, 15, 60, SyncType::PTP);
 }
