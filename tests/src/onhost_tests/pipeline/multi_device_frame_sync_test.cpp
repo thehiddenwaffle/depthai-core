@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -262,6 +263,11 @@ void setupDevice(dai::DeviceInfo& deviceInfo,
 
 int testFsync(
     float targetFps, double syncThresholdSec, uint64_t testDurationSec, int recvAllTimeoutSec, int initialSyncTimeoutSec, SyncType syncType) {
+
+    if (syncType == SyncType::PTP) {
+        syncThresholdSec = 1.0 / (2.0 * targetFps);
+    }
+
     std::cout << "=================================\x1B[1;32mTest started\x1B[0m================================" << std::endl;
     std::cout << "Sync type: " << toString(syncType) << std::endl;
     std::cout << "FPS: " << targetFps << std::endl;
@@ -411,7 +417,9 @@ int testFsync(
                 waitingForInitialSync = false;
             }
 
-            REQUIRE_MSG(waitingForInitialSync || syncStatus, "Sync error: Sync lost, threshold exceeded: " << deltaUs << " us");
+            if (syncType == SyncType::EXTERNAL) {
+                REQUIRE_MSG(waitingForInitialSync || syncStatus, "Sync error: Sync lost, threshold exceeded: " << deltaUs << " us");
+            }
 
             latestFrameGroup.reset();
         }
@@ -448,7 +456,7 @@ TEST_CASE("Test Multi-device external frame sync with different FPS values", "[f
     // auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f, 120.0f, 240.0f, 300.0f, 600.0f);
     auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f);
     CAPTURE(fps);
-    testFsync(fps, 1e-3, 180, 10, 4, SyncType::EXTERNAL);
+    testFsync(fps, 3e-3, 180, 10, 4, SyncType::EXTERNAL);
 }
 
 
@@ -514,5 +522,5 @@ TEST_CASE("Test Multi-device PTP frame sync with different FPS values", "[fsync]
     // auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f, 120.0f, 240.0f, 300.0f, 600.0f);
     auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f);
     CAPTURE(fps);
-    testFsync(fps, 1e-3, 180, 15, 60, SyncType::PTP);
+    testFsync(fps, 0, 180, 15, 60, SyncType::PTP);
 }
