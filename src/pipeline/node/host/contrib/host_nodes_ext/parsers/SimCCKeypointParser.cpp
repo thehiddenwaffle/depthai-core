@@ -41,14 +41,14 @@ void SimCCKeypointParser::foggyGuessesForOneDim(const nn_archive::v1::Head& head
     if(auto shapeIsSome = keypointsOutputs[0].shape) {
         // N 1 C ( 2/3 ) * KPDims D = W = H
         const int product = std::accumulate(shapeIsSome->begin(), shapeIsSome->end(), 1, std::multiplies<int>());
-        const int expected = nKeypoints * static_cast<uint8_t>(valuesPerKeypoint) * (pixelSubdivisions * (inputImgDim * 2));
+        const int expected = nKeypoints * 3 * (pixelSubdivisions * (inputImgDim * 2));
         // I don't know what to do, phone it in
         DAI_CHECK_V(product == expected, "The developer of this project was not even sure a model like yours would exist, best efforts were made but alas...")
         // Whether the keypoint # dim is separate from the keypoint XY(Z) dimension(yolo does this)
         for(auto& dim : *shapeIsSome) {
-            if(dim == nKeypoints * static_cast<uint8_t>(valuesPerKeypoint)) {
+            if(dim == nKeypoints * 3) {
                 collapsedDimsAreInterleaved = head.metadata.extraParams.value("collapsed_dims_are_interleaved", false);
-                logger::trace("Observed output dim {} == {} * {}, assuming collapsed dim", dim, nKeypoints, static_cast<uint8_t>(valuesPerKeypoint));
+                logger::trace("Observed output dim {} == {} * {}, assuming collapsed dim", dim, nKeypoints, static_cast<uint8_t>(3));
                 break;
             }
         }
@@ -62,7 +62,7 @@ void SimCCKeypointParser::inferConfigFromMultipleOutputs(const nn_archive::v1::H
                                                          std::pair<std::optional<int64_t>, std::optional<int64_t>>& imgWidthHeight) {
     if(const auto& [maybeWidth, maybeHeight] = imgWidthHeight; maybeWidth && maybeHeight) {
         simCCDimLengths = {static_cast<uint16_t>(*maybeWidth * pixelSubdivisions), static_cast<uint16_t>(*maybeHeight * pixelSubdivisions)};
-        if(valuesPerKeypoint == singlekp::ValuesPerKeypoint::Three) {
+        if(keypointsOutputs.size() == 3) {
             replicateXDimToZDim = head.metadata.extraParams.value("input_z_dim_equal_x_dim", replicateXDimToZDim);
             simCCDimLengths.push_back(static_cast<uint16_t>(replicateXDimToZDim ? *maybeWidth * pixelSubdivisions : *maybeHeight * pixelSubdivisions));
         }
@@ -143,10 +143,10 @@ void SimCCKeypointParser::buildImpl(const nn_archive::v1::Head& head, const nn_a
 }
 
 void SimCCKeypointParser::run() {
-    while(isRunning()) {
+    while(mainLoop()) {
         const auto t1 = std::chrono::high_resolution_clock::now();
         // TODO not just my application
-        std::shared_ptr<Keypoints3D3C> outputMessage;
+        std::shared_ptr<Keypoints2D> outputMessage;
         // Build a new nested scope to prevent use after move because I wish I was in rust
         {
             std::shared_ptr<NNData> result;
@@ -156,7 +156,8 @@ void SimCCKeypointParser::run() {
                 break;
             }
 
-            xt::xtensor<float_t, 2> output = xt::empty<float_t>({static_cast<size_t>(nKeypoints), keypointsOutputs.size() * 2});
+            xt::xtensor<float_t, 2> output = xt::empty<float_t>({static_cast<size_t>(nKeypoints), keypointsOutputs.size()});
+            xt::xtensor<float_t, 2> confidences_2d = xt::empty<float_t>({static_cast<size_t>(nKeypoints), keypointsOutputs.size()});
             for(int i = 0; i < keypointsOutputs.size(); i++) {
                 std::string& layerName = keypointsOutputs[i].name;
                 DAI_CHECK_V(result->hasLayer(layerName), "Expecting layer {} in NNData", layerName)
@@ -189,11 +190,17 @@ void SimCCKeypointParser::run() {
                 // Clamp
                 auto confidenceClamped = xt::clip(xt::amax(prediction, -1), 0.0f, 1.0f);
 
-                xt::view(output, xt::all(), 2 * i) = locationsNormalized;
-                xt::view(output, xt::all(), 2 * i + 1) = confidenceClamped;
+                xt::view(output, xt::all(), i) = locationsNormalized;
+                xt::view(confidences_2d, xt::all(),  i) = confidenceClamped;
             }
             auto skeletonEdgesCpy = skeletonEdges;
-            outputMessage = std::make_shared<Keypoints3D3C>(std::move(result), std::move(output), std::move(skeletonEdgesCpy));
+            xt::xtensor<float_t, 1> confidences;
+            if(keypointsOutputs.size() > 1) {
+                confidences = xt::mean(confidences_2d, 1);
+            }else {
+                confidences = xt::reshape_view(confidences_2d, {static_cast<size_t>(nKeypoints)});
+            }
+            outputMessage = std::make_shared<Keypoints2D>(std::move(result), std::move(output), std::move(confidences),  std::move(skeletonEdgesCpy));
         }
         const auto t2 = std::chrono::high_resolution_clock::now();
         pimpl->logger->trace("SimCCKeypointParser: Time taken: {}ms", std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count() / 1000);

@@ -60,8 +60,8 @@ function(pybind11_mkdoc_setup_internal_combined output_path mkdoc_headers includ
 
     # Execute module pybind11_mkdoc to check if present
     message(STATUS "Checking for pybind11_mkdoc")
-    if(Python3_VERSION_MINOR GREATER 10)
-        set(MKDOC_CMD pipx run --python ${Python3_EXECUTABLE} --spec ${PYBIND11_MKDOC_MODULE_NAME} ${PYBIND11_MKDOC_PIPX_NAME} )
+    if(Python_VERSION_MAJOR EQUAL 3 AND Python_VERSION_MINOR GREATER 10)
+        set(MKDOC_CMD pipx run --python ${Python_EXECUTABLE} --spec ${PYBIND11_MKDOC_MODULE_NAME} ${PYBIND11_MKDOC_PIPX_NAME} )
     else()
         set(MKDOC_CMD ${PYBIND11_MKDOC_MODULE_NAME})
     endif()

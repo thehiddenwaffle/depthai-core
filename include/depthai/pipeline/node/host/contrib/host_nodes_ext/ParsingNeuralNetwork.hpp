@@ -14,6 +14,7 @@ namespace dai::node {
 
 class ParsingNeuralNetwork : public CustomThreadedNode<ParsingNeuralNetwork> {
    public:
+    std::shared_ptr<ParsingNeuralNetwork> build_no_link(const NNArchive& nnArchive);
     std::shared_ptr<ParsingNeuralNetwork> build(Output& input, const NNArchive& nnArchive);
     std::shared_ptr<ParsingNeuralNetwork> build(const std::shared_ptr<Camera>& input, NNModelDescription modelDesc, std::optional<float> fps = std::nullopt);
     std::shared_ptr<ParsingNeuralNetwork> build(const std::shared_ptr<Camera>& input, const NNArchive& nnArchive, std::optional<float> fps = std::nullopt);
@@ -32,11 +33,21 @@ class ParsingNeuralNetwork : public CustomThreadedNode<ParsingNeuralNetwork> {
 
     void run() override;
 
-    std::optional<std::reference_wrapper<InputMap>> getInputs() const { return s.has_value() ? std::optional<std::reference_wrapper<InputMap>>(s->inputs) : std::nullopt;}
-    std::optional<std::reference_wrapper<Input>> getInput() const { return s.has_value() ? std::optional<std::reference_wrapper<Input>>(s->input) : std::nullopt;}
-    std::optional<std::reference_wrapper<Output>> getPassthrough() const { return s.has_value() ? std::optional<std::reference_wrapper<Output>>(s->passthrough) : std::nullopt;}
-    std::optional<std::reference_wrapper<OutputMap>> getPassthroughs() const { return s.has_value() ? std::optional<std::reference_wrapper<OutputMap>>(s->passthroughs) : std::nullopt;}
-    std::optional<std::reference_wrapper<Output>> getOut() const { return s.has_value() ? std::optional<std::reference_wrapper<Output>>(s->out) : std::nullopt;}
+    std::optional<std::reference_wrapper<InputMap>> getInputs() const {
+        return s.has_value() ? std::optional<std::reference_wrapper<InputMap>>(s->inputs) : std::nullopt;
+    }
+    std::optional<std::reference_wrapper<Input>> getInput() const {
+        return s.has_value() ? std::optional<std::reference_wrapper<Input>>(s->input) : std::nullopt;
+    }
+    std::optional<std::reference_wrapper<Output>> getPassthrough() const {
+        return s.has_value() ? std::optional<std::reference_wrapper<Output>>(s->passthrough) : std::nullopt;
+    }
+    std::optional<std::reference_wrapper<OutputMap>> getPassthroughs() const {
+        return s.has_value() ? std::optional<std::reference_wrapper<OutputMap>>(s->passthroughs) : std::nullopt;
+    }
+    std::optional<std::reference_wrapper<Output>> getOut() const {
+        return s.has_value() ? std::optional<std::reference_wrapper<Output>>(s->out) : std::nullopt;
+    }
 
    private:
     struct BuiltState {
@@ -51,7 +62,7 @@ class ParsingNeuralNetwork : public CustomThreadedNode<ParsingNeuralNetwork> {
         Output& out;
     };
     std::shared_ptr<ParsingNeuralNetwork> ensure_nn_and_build_via_closure(
-       const std::function<const NNArchive&(std::shared_ptr<NeuralNetwork>)>& builder_returning_archive);
+        const std::function<const NNArchive&(std::shared_ptr<NeuralNetwork>)>& builder_returning_archive);
 
     Output& linkOneOrMoreParsers(const std::shared_ptr<NeuralNetwork>& nn, std::vector<HostOrDeviceParser> newParsers);
     std::optional<Subnode<Sync>> parserSync = std::nullopt;

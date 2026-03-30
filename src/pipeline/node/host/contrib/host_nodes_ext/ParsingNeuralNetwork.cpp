@@ -16,7 +16,7 @@ namespace dai::node {
 
 std::shared_ptr<ParsingNeuralNetwork> ParsingNeuralNetwork::ensure_nn_and_build_via_closure(
     const std::function<const NNArchive&(std::shared_ptr<NeuralNetwork>)>& builder_returning_archive) {
-    if(auto sIsSome = s){
+    if(s.has_value()){
         logger::warn("ParsingNeuralNetwork Node being re-built(build function called twice), deleting old neural network node");
         getParentPipeline().remove(s->nn);
         for(auto parser : s->parsers) {
@@ -35,6 +35,13 @@ std::shared_ptr<ParsingNeuralNetwork> ParsingNeuralNetwork::ensure_nn_and_build_
     s.emplace(newParsers, nn, syncOrSingle);
 
     return std::static_pointer_cast<ParsingNeuralNetwork>(shared_from_this());
+}
+
+std::shared_ptr<ParsingNeuralNetwork> ParsingNeuralNetwork::build_no_link(const NNArchive& nnArchive) {
+    return ensure_nn_and_build_via_closure([this, &nnArchive](std::shared_ptr<NeuralNetwork> nn) -> const NNArchive& {
+        nn->setNNArchive(nnArchive);
+        return nnArchive;
+    });
 }
 
 std::shared_ptr<ParsingNeuralNetwork> ParsingNeuralNetwork::build(Output& input, const NNArchive& nnArchive) {

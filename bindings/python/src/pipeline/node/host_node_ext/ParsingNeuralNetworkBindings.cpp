@@ -30,6 +30,7 @@ void bind_parsingneuralnetwork(pybind11::module& m, void* pCallstack) {
             getImplicitPipeline()->add(node);
             return node;
         }))
+        .def("build", py::overload_cast<const NNArchive&>(&ParsingNeuralNetwork::build_no_link), py::arg("nnArchive"))
         .def("build", py::overload_cast<Node::Output&, const NNArchive&>(&ParsingNeuralNetwork::build), py::arg("input"), py::arg("nnArchive"))
         .def("build",
              py::overload_cast<const std::shared_ptr<Camera>&, NNModelDescription, std::optional<float>>(&ParsingNeuralNetwork::build),
@@ -42,6 +43,8 @@ void bind_parsingneuralnetwork(pybind11::module& m, void* pCallstack) {
              py::arg("nnArchive"),
              py::arg("fps") = std::nullopt)
         .def_property_readonly(
+            "inputs", [](ParsingNeuralNetwork& node) { return node.getInputs(); }, py::return_value_policy::reference_internal)
+        .def_property_readonly(
             "out",
             [](ParsingNeuralNetwork& node) {
                 if(const auto outIsSome = node.getOut()) {
@@ -50,20 +53,17 @@ void bind_parsingneuralnetwork(pybind11::module& m, void* pCallstack) {
                 throw py::attribute_error("ParsingNeuralNetwork.out is not set(was .build() called?)");
             },
             py::return_value_policy::reference_internal)
-        .def_property_readonly(
-            "passthroughs",
-            [](ParsingNeuralNetwork& node) {
-                if(const auto passthroughsIsSome = node.getPassthroughs()) {
-                    return passthroughsIsSome.value();
-                }
-                throw py::attribute_error("ParsingNeuralNetwork.passthroughs is not set(was .build() called?)");
-            })
-        .def_property_readonly(
-            "passthrough",
-            [](ParsingNeuralNetwork& node) {
-                if(const auto passthroughIsSome = node.getPassthrough()) {
-                    return passthroughIsSome.value();
-                }
-                throw py::attribute_error("ParsingNeuralNetwork.passthrough is not set(was .build() called?)");
-            });
+        .def_property_readonly("passthroughs",
+                               [](ParsingNeuralNetwork& node) {
+                                   if(const auto passthroughsIsSome = node.getPassthroughs()) {
+                                       return passthroughsIsSome.value();
+                                   }
+                                   throw py::attribute_error("ParsingNeuralNetwork.passthroughs is not set(was .build() called?)");
+                               })
+        .def_property_readonly("passthrough", [](ParsingNeuralNetwork& node) {
+            if(const auto passthroughIsSome = node.getPassthrough()) {
+                return passthroughIsSome.value();
+            }
+            throw py::attribute_error("ParsingNeuralNetwork.passthrough is not set(was .build() called?)");
+        });
 }

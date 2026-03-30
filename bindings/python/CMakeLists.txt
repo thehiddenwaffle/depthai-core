@@ -57,7 +57,7 @@ if (DEPTHAI_BUILD_EXT_HOST_NODES)
     set(EXT_HOST_NODE_SOURCES
         src/pipeline/node/HostNodeExtBindings.cpp
         src/pipeline/node/host_node_ext/ParsingNeuralNetworkBindings.cpp
-        src/pipeline/node/host_node_ext/KeypointLocalizerBindings.cpp
+#        src/pipeline/node/host_node_ext/KeypointLocalizerBindings.cpp
     )
 endif ()
 
@@ -350,6 +350,7 @@ target_link_libraries(${TARGET_NAME}
         # pybind11
         pybind11::pybind11
         ${DEPTHAI_LINK_TARGET}
+        PRIVATE
         hedley
         pybind11_json
         xtensor-python

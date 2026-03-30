@@ -5,7 +5,6 @@
 
 namespace dai::node {
 
-
 class SimCCKeypointParser final : public NodeCRTP<KeypointParser, SimCCKeypointParser> {
    public:
     constexpr static const char* NAME = "SimCCKeypointParser";
@@ -23,7 +22,8 @@ class SimCCKeypointParser final : public NodeCRTP<KeypointParser, SimCCKeypointP
                                         std::pair<std::optional<int64_t>, std::optional<int64_t>>& imgWidthHeight);
 
     uint8_t pixelSubdivisions = 2;
-    // Populated if the keypoint # dim and the XY(Z) dimensionality are collapsed(like yolo). Stores whether collapsed dim is interleaved(x1, x2 .. y1, y2 .. z1, z2)
+    // Populated if the keypoint # dim and the XY(Z) dimensionality are collapsed(like yolo). Stores whether collapsed dim is interleaved(x1, x2 .. y1, y2 ..
+    // z1, z2)
     //  or planar(x1, y1, z1, x2, y2, z2)
     std::optional<bool> collapsedDimsAreInterleaved = std::nullopt;
     bool replicateXDimToZDim = true;

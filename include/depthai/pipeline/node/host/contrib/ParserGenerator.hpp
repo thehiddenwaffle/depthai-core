@@ -11,11 +11,10 @@
 namespace dai::node {
 
 typedef std::variant<std::shared_ptr<BaseParser>, std::shared_ptr<DetectionParser>> HostOrDeviceParser;
-template<typename V>
+template <typename V>
 constexpr bool all_alternatives_shared_ptr = false;
-template<typename... Ts>
-constexpr bool all_alternatives_shared_ptr<std::variant<Ts...>> =
-    (std::conjunction_v<std::is_same<std::shared_ptr<typename Ts::element_type>, Ts>...>);
+template <typename... Ts>
+constexpr bool all_alternatives_shared_ptr<std::variant<Ts...>> = (std::conjunction_v<std::is_same<std::shared_ptr<typename Ts::element_type>, Ts>...>);
 static_assert(all_alternatives_shared_ptr<HostOrDeviceParser>, "All alternatives must be std::shared_ptr<T>");
 
 struct ConfigModelWithHeads {
