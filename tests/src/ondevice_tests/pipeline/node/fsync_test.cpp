@@ -71,20 +71,78 @@ std::shared_ptr<dai::Device> makeRvc4DeviceOrSkip() {
     return device;
 }
 
-std::map<dai::CameraBoardSocket, std::shared_ptr<dai::ImgFrame>> collectOneFramePerCamera(
-    const std::vector<CameraRequest>& requests, std::shared_ptr<dai::Device> device) {
+std::map<dai::CameraBoardSocket, std::shared_ptr<dai::ImgFrame>> collectOneFramePerCamera(const std::vector<CameraRequest>& requests,
+                                                                                          const std::vector<dai::CameraBoardSocket>& expectedSlaveSockets,
+                                                                                          const std::vector<dai::StereoPair>& stereoPairs,
+                                                                                          std::shared_ptr<dai::Device> device) {
     dai::Pipeline pipeline(std::move(device));
     std::map<dai::CameraBoardSocket, std::shared_ptr<dai::MessageQueue>> queues;
+    std::shared_ptr<dai::node::Sync> sync = nullptr;
+    std::shared_ptr<dai::MessageQueue> syncQueue = nullptr;
+    if(expectedSlaveSockets.size() >= 2) {
+        sync = pipeline.create<dai::node::Sync>();
+        std::optional<float> expectedSlaveFps;
+        for(const auto& request : requests) {
+            if(std::find(expectedSlaveSockets.begin(), expectedSlaveSockets.end(), request.socket) != expectedSlaveSockets.end()) {
+                expectedSlaveFps = request.fps;
+                break;
+            }
+        }
+        REQUIRE(expectedSlaveFps.has_value());
+        const auto syncThreshold =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(0.5 / expectedSlaveFps.value()));
+        sync->setSyncThreshold(syncThreshold);
+    }
 
     for(const auto& request : requests) {
         auto camera = pipeline.create<dai::node::Camera>()->build(request.socket);
         camera->initialControl.setFrameSyncMode(request.frameSyncMode);
-        auto* output = camera->requestOutput(std::make_pair(640, 400), std::nullopt, dai::ImgResizeMode::CROP, request.fps);
+        const auto outputSize =
+            request.socket == dai::CameraBoardSocket::CAM_A ? std::make_pair(1280U, 800U) : std::make_pair(640U, 400U);
+        auto* output = camera->requestOutput(outputSize, std::nullopt, dai::ImgResizeMode::CROP, request.fps);
         REQUIRE(output != nullptr);
         queues.emplace(request.socket, output->createOutputQueue(4, false));
+        if(sync != nullptr
+           && std::find(expectedSlaveSockets.begin(), expectedSlaveSockets.end(), request.socket) != expectedSlaveSockets.end()) {
+            output->link(sync->inputs[dai::toString(request.socket)]);
+        }
     }
 
+    if(sync != nullptr) {
+        syncQueue = sync->out.createOutputQueue(4, false);
+    }
     pipeline.start();
+
+    if(syncQueue != nullptr) {
+        for(int i = 0; i < 5; ++i) {
+            auto syncedFrames = syncQueue->get<dai::MessageGroup>();
+            REQUIRE(syncedFrames != nullptr);
+        }
+
+        for(int i = 0; i < 20; ++i) {
+            auto syncedFrames = syncQueue->get<dai::MessageGroup>();
+            REQUIRE(syncedFrames != nullptr);
+            std::vector<std::chrono::time_point<std::chrono::steady_clock, std::chrono::steady_clock::duration>> slaveTimestamps;
+            for(const auto socket : expectedSlaveSockets) {
+                auto frame = syncedFrames->get<dai::ImgFrame>(dai::toString(socket));
+                REQUIRE(frame != nullptr);
+                slaveTimestamps.push_back(frame->getTimestampDevice());
+            }
+
+            const auto [minIt, maxIt] = std::minmax_element(slaveTimestamps.begin(), slaveTimestamps.end());
+            auto threshold = RVC4_THRESHOLDS.all;
+            const bool expectedPairIsStereo =
+                std::find_if(stereoPairs.begin(), stereoPairs.end(), [&](const auto& pair) {
+                    return (pair.left == expectedSlaveSockets[0] && pair.right == expectedSlaveSockets[1])
+                           || (pair.left == expectedSlaveSockets[1] && pair.right == expectedSlaveSockets[0]);
+                })
+                != stereoPairs.end();
+            if(expectedSlaveSockets.size() == 2 && expectedPairIsStereo) {
+                threshold = RVC4_THRESHOLDS.leftRight;
+            }
+            REQUIRE((*maxIt - *minIt) <= threshold);
+        }
+    }
 
     std::map<dai::CameraBoardSocket, std::shared_ptr<dai::ImgFrame>> frames;
     for(const auto& request : requests) {
@@ -109,6 +167,7 @@ void requireExpectedMetadata(const std::map<dai::CameraBoardSocket, std::shared_
         REQUIRE(it->second->getFps() == Catch::Approx(expectation.fps).margin(0.05));
         REQUIRE(it->second->getSensorMode() >= 0);
     }
+
 }
 
 bool isPartOfStereoPair(dai::CameraBoardSocket socket, const std::vector<dai::StereoPair>& stereoPairs) {
@@ -247,7 +306,8 @@ TEST_CASE("Fsync metadata state selection", "[fsync][metadata]") {
             {dai::CameraBoardSocket::CAM_B, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
             {dai::CameraBoardSocket::CAM_C, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
         };
-        auto frames = collectOneFramePerCamera(requests, device);
+        auto frames = collectOneFramePerCamera(
+            requests, {dai::CameraBoardSocket::CAM_A, dai::CameraBoardSocket::CAM_B, dai::CameraBoardSocket::CAM_C}, stereoPairs, device);
         requireExpectedMetadata(frames,
                                 {
                                     {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::INPUT, 30.0f},
@@ -262,7 +322,7 @@ TEST_CASE("Fsync metadata state selection", "[fsync][metadata]") {
             {dai::CameraBoardSocket::CAM_B, 55.0f, dai::CameraControl::FrameSyncMode::AUTO},
             {dai::CameraBoardSocket::CAM_C, 23.0f, dai::CameraControl::FrameSyncMode::AUTO},
         };
-        auto frames = collectOneFramePerCamera(requests, device);
+        auto frames = collectOneFramePerCamera(requests, {}, stereoPairs, device);
         requireExactlyOneStereoPairedSlave(frames, stereoPairs, requests);
     }
 
@@ -272,7 +332,7 @@ TEST_CASE("Fsync metadata state selection", "[fsync][metadata]") {
             {dai::CameraBoardSocket::CAM_B, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
             {dai::CameraBoardSocket::CAM_C, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
         };
-        auto frames = collectOneFramePerCamera(requests, device);
+        auto frames = collectOneFramePerCamera(requests, {dai::CameraBoardSocket::CAM_B, dai::CameraBoardSocket::CAM_C}, stereoPairs, device);
         requireExpectedMetadata(frames,
                                 {
                                     {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::NONE, 40.0f},
@@ -287,7 +347,7 @@ TEST_CASE("Fsync metadata state selection", "[fsync][metadata]") {
             {dai::CameraBoardSocket::CAM_B, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
             {dai::CameraBoardSocket::CAM_C, 40.0f, dai::CameraControl::FrameSyncMode::AUTO},
         };
-        auto frames = collectOneFramePerCamera(requests, device);
+        auto frames = collectOneFramePerCamera(requests, {dai::CameraBoardSocket::CAM_A, dai::CameraBoardSocket::CAM_B}, stereoPairs, device);
         requireExpectedMetadata(frames,
                                 {
                                     {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::INPUT, 30.0f},
@@ -302,7 +362,7 @@ TEST_CASE("Fsync metadata state selection", "[fsync][metadata]") {
             {dai::CameraBoardSocket::CAM_B, 40.0f, dai::CameraControl::FrameSyncMode::AUTO},
             {dai::CameraBoardSocket::CAM_C, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
         };
-        auto frames = collectOneFramePerCamera(requests, device);
+        auto frames = collectOneFramePerCamera(requests, {dai::CameraBoardSocket::CAM_A, dai::CameraBoardSocket::CAM_C}, stereoPairs, device);
         requireExpectedMetadata(frames,
                                 {
                                     {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::INPUT, 30.0f},
@@ -317,7 +377,7 @@ TEST_CASE("Fsync metadata state selection", "[fsync][metadata]") {
             {dai::CameraBoardSocket::CAM_B, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
             {dai::CameraBoardSocket::CAM_C, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
         };
-        auto frames = collectOneFramePerCamera(requests, device);
+        auto frames = collectOneFramePerCamera(requests, {}, stereoPairs, device);
         requireExpectedMetadata(frames,
                                 {
                                     {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::INPUT, 23.0f},
@@ -332,7 +392,7 @@ TEST_CASE("Fsync metadata state selection", "[fsync][metadata]") {
             {dai::CameraBoardSocket::CAM_B, 23.0f, dai::CameraControl::FrameSyncMode::AUTO},
             {dai::CameraBoardSocket::CAM_C, 23.0f, dai::CameraControl::FrameSyncMode::INPUT},
         };
-        auto frames = collectOneFramePerCamera(requests, device);
+        auto frames = collectOneFramePerCamera(requests, {dai::CameraBoardSocket::CAM_B, dai::CameraBoardSocket::CAM_C}, stereoPairs, device);
         requireExpectedMetadata(frames,
                                 {
                                     {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::NONE, 30.0f},
@@ -347,7 +407,7 @@ TEST_CASE("Fsync metadata state selection", "[fsync][metadata]") {
             {dai::CameraBoardSocket::CAM_B, 30.0f, dai::CameraControl::FrameSyncMode::OFF},
             {dai::CameraBoardSocket::CAM_C, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
         };
-        auto frames = collectOneFramePerCamera(requests, device);
+        auto frames = collectOneFramePerCamera(requests, {dai::CameraBoardSocket::CAM_A, dai::CameraBoardSocket::CAM_C}, stereoPairs, device);
         requireExpectedMetadata(frames,
                                 {
                                     {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::INPUT, 30.0f},
