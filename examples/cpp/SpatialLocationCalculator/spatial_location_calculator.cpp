@@ -65,13 +65,17 @@ int main() {
             std::vector<float> depthValues;
             for(int i = 0; i < frameDepth.rows; i++) {
                 for(int j = 0; j < frameDepth.cols; j++) {
-                    float val = frameDepth.at<float>(i, j);
+                    uint16_t val = frameDepth.at<uint16_t>(i, j);
                     if(val > 0) depthValues.push_back(val);
                 }
             }
-            std::sort(depthValues.begin(), depthValues.end());
-            float medianDepth = depthValues[depthValues.size() / 2];
-            std::cout << "Median depth value: " << medianDepth << std::endl;
+            if(depthValues.empty()) {
+                std::cout << "Median depth value: N/A (no valid depth pixels)" << std::endl;
+            } else {
+                std::sort(depthValues.begin(), depthValues.end());
+                float medianDepth = depthValues[depthValues.size() / 2];
+                std::cout << "Median depth value: " << medianDepth << std::endl;
+            }
 
             // Process depth frame for visualization
             cv::Mat depthFrameColor;

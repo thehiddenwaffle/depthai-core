@@ -439,6 +439,12 @@ add_dependencies(platform_test fslock_dummy)
 dai_add_test(circular_buffer_test src/onhost_tests/utility/circular_buffer_test.cpp)
 dai_set_test_labels(circular_buffer_test onhost ci)
 
+# EventsManager test
+if(DEPTHAI_ENABLE_EVENTS_MANAGER)
+    dai_add_test(events_manager_test src/onhost_tests/utility/events_manager_test.cpp)
+    dai_set_test_labels(events_manager_test onhost ci)
+endif()
+
 # Pipeline debugging tests
 dai_add_test(pipeline_debugging_host_test src/onhost_tests/pipeline_debugging_host_test.cpp)
 dai_set_test_labels(pipeline_debugging_host_test onhost ci)
@@ -450,10 +456,6 @@ dai_set_test_labels(nndata_test onhost ci)
 #ImgDetections tests
 dai_add_test(imgdetections_test src/onhost_tests/pipeline/datatype/imgdetections_test.cpp)
 dai_set_test_labels(imgdetections_test onhost ci)
-
-#Gate tests
-dai_add_test(gate_node_test src/ondevice_tests/pipeline/node/gate_note_tests.cpp)
-dai_set_test_labels(gate_node_test onhost ci)
 
 #ImgFrame tests
 dai_add_test(imgframe_test src/onhost_tests/pipeline/datatype/imgframe_test.cpp)
@@ -625,6 +627,10 @@ if(DEPTHAI_FETCH_ARTIFACTS)
     dai_set_test_labels(detection_parser_test ondevice rvc4 ci)
 endif()
 
+# SegmentationParser test
+dai_add_test(segmentation_parser_test src/ondevice_tests/pipeline/node/segmentation_parser_test.cpp)
+dai_set_test_labels(segmentation_parser_test ondevice rvc4 ci)
+
 # Spatial detection network test
 dai_add_test(spatial_detection_network_test src/ondevice_tests/pipeline/node/spatial_detection_network_test.cpp)
 dai_set_test_labels(spatial_detection_network_test ondevice rvc2_all rvc4 ci)
@@ -639,6 +645,10 @@ endif()
 # ImgTransformations tests
 dai_add_test(img_transformation_test src/ondevice_tests/img_transformation_test.cpp CXX_STANDARD 17)
 dai_set_test_labels(img_transformation_test ondevice rvc2_all rvc4 ci)
+
+# EEPROM undistortion test (RVC2 only)
+dai_add_test(eeprom_undistortion_test src/ondevice_tests/eeprom_undistortion_test.cpp)
+dai_set_test_labels(eeprom_undistortion_test ondevice rvc2_all ci)
 
 # Regression tests for encountered bugs
 dai_add_test(regression_camera_concurrency_test src/ondevice_tests/regression/camera_concurrency.cpp)
@@ -754,3 +764,11 @@ endif()
 # NeuralAssistedStereo test
 dai_add_test(neural_assisted_stereo_node_test src/ondevice_tests/pipeline/node/neural_assisted_stereo_node_test.cpp)
 dai_set_test_labels(neural_assisted_stereo_node_test ondevice rvc4 ci)
+
+# Gate tests
+dai_add_test(gate_node_test src/ondevice_tests/pipeline/node/gate_node_tests.cpp)
+dai_set_test_labels(gate_node_test ondevice rvc4 rvc2_all ci)
+
+# AutoCalibration test
+dai_add_test(auto_calibration_test src/ondevice_tests/pipeline/node/auto_calibration_test.cpp)
+dai_set_test_labels(auto_calibration_test ondevice rvc4 rvc2_all ci)

@@ -25,6 +25,7 @@
 #include "depthai/properties/SPIInProperties.hpp"
 #include "depthai/properties/SPIOutProperties.hpp"
 #include "depthai/properties/ScriptProperties.hpp"
+#include "depthai/properties/SegmentationParserProperties.hpp"
 #include "depthai/properties/SpatialDetectionNetworkProperties.hpp"
 #include "depthai/properties/SpatialLocationCalculatorProperties.hpp"
 #include "depthai/properties/StereoDepthProperties.hpp"
@@ -45,6 +46,7 @@
     #include "depthai/properties/ImageFiltersProperties.hpp"
 
     #ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
+        #include "depthai/properties/AutoCalibrationProperties.hpp"
         #include "depthai/properties/DynamicCalibrationProperties.hpp"
     #endif
 #endif
@@ -84,6 +86,7 @@ SPIOutProperties::~SPIOutProperties() = default;
 ScriptProperties::~ScriptProperties() = default;
 SpatialDetectionNetworkProperties::~SpatialDetectionNetworkProperties() = default;
 SpatialLocationCalculatorProperties::~SpatialLocationCalculatorProperties() = default;
+SegmentationParserProperties::~SegmentationParserProperties() = default;
 StereoDepthProperties::~StereoDepthProperties() = default;
 SyncProperties::~SyncProperties() = default;
 SystemLoggerProperties::~SystemLoggerProperties() = default;
@@ -104,6 +107,7 @@ ToFDepthConfidenceFilterProperties::~ToFDepthConfidenceFilterProperties() = defa
 
     #ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
 DynamicCalibrationProperties::~DynamicCalibrationProperties() = default;
+AutoCalibrationProperties::~AutoCalibrationProperties() = default;
     #endif
 
 #endif

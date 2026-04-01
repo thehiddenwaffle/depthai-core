@@ -22,12 +22,12 @@ def uploadFailureCallback(sendSnapResult):
     elif status == dai.SendSnapCallbackStatus.FILE_UPLOAD_FAILED:
         print("File upload was unsuccessful!")
     elif status == dai.SendSnapCallbackStatus.SEND_EVENT_FAILED:
-        print("Snap could not been sent to the hub, following successful file upload!")
+        print("Snap could not be sent to the hub, following successful file upload!")
 
 # Create pipeline
 with dai.Pipeline() as pipeline:
-    # Set your Hub team's api-key using the environment variable DEPTHAI_HUB_API_KEY. Or use the EventsManager setToken() method.
-    eventMan = dai.EventsManager()
+    # Set your Hub team's api-key using the environment variable DEPTHAI_HUB_API_KEY. Or pass the key when creating the EventsManager instance.
+    eventMan = dai.EventsManager("")
 
     cameraNode = pipeline.create(dai.node.Camera).build()
     detectionNetwork = pipeline.create(dai.node.DetectionNetwork).build(cameraNode, dai.NNModelDescription("yolov6-nano"))
@@ -98,10 +98,10 @@ with dai.Pipeline() as pipeline:
         if len(borderDetectionsList) > 0:
             borderDetections = dai.ImgDetections()
             borderDetections.detections = borderDetectionsList
-            fileName = f"ImageDetection_{counter}"
+            fileTag = f"ImageDetection_{counter}"
 
             fileGroup = dai.FileGroup()
-            fileGroup.addImageDetectionsPair(fileName, inRgb, borderDetections)
+            fileGroup.addImageDetectionsPair(fileTag, inRgb, borderDetections)
             localSnapID = eventMan.sendSnap("LowConfidenceDetection", fileGroup, ["EventsExample", "Python"], {"key_0" : "value_0", "key_1" : "value_1"}, 
                               uploadSuccessCallback, uploadFailureCallback)
             if localSnapID != None:
@@ -110,3 +110,10 @@ with dai.Pipeline() as pipeline:
                 print("Snap was not successfully added to the EventsManager")
 
             counter += 1
+
+    cv2.destroyAllWindows()
+    # Wait for pending snaps to be uploaded
+    if eventMan.waitForPendingUploads(timeoutMs=10000):
+        print("Pending uploads have been successfully uploaded")
+    else:
+        print("Pending uploads were discarded due to timeout (10s) or dropped connection")

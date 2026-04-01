@@ -20,10 +20,12 @@
 #include "depthai/utility/AtomicBool.hpp"
 
 // shared
+#include "depthai/common/CameraBoardSocket.hpp"
 #include "depthai/device/BoardConfig.hpp"
 #include "depthai/pipeline/InputQueue.hpp"
 #include "depthai/pipeline/PipelineSchema.hpp"
 #include "depthai/pipeline/datatype/PipelineState.hpp"
+#include "depthai/pipeline/node/Camera.hpp"
 #include "depthai/properties/GlobalProperties.hpp"
 #include "depthai/utility/RecordReplay.hpp"
 
@@ -38,12 +40,12 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
     friend class utility::PipelineImplHelper;
 
    public:
-    PipelineImpl(Pipeline& pipeline, bool createImplicitDevice = true) : assetManager("/pipeline/"), parent(pipeline) {
+    PipelineImpl(bool createImplicitDevice = true) : assetManager("/pipeline/") {
         if(createImplicitDevice) {
             defaultDevice = std::make_shared<Device>();
         }
     }
-    PipelineImpl(Pipeline& pipeline, std::shared_ptr<Device> device) : assetManager("/pipeline/"), parent(pipeline), defaultDevice{std::move(device)} {}
+    PipelineImpl(std::shared_ptr<Device> device) : assetManager("/pipeline/"), defaultDevice{std::move(device)} {}
     PipelineImpl(const PipelineImpl&) = delete;
     PipelineImpl& operator=(const PipelineImpl&) = delete;
     PipelineImpl(PipelineImpl&&) = delete;
@@ -83,12 +85,16 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
     PipelineSchema getDevicePipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE, bool includePipelineDebugging = true) const;
     Device::Config getDeviceConfig() const;
     void setCameraTuningBlobPath(const fs::path& path);
+    void setCameraTuningBlobPath(CameraBoardSocket socket, const fs::path& path);
     void setXLinkChunkSize(int sizeBytes);
     GlobalProperties getGlobalProperties() const;
     void setGlobalProperties(GlobalProperties globalProperties);
     void setSippBufferSize(int sizeBytes);
     void setSippDmaBufferSize(int sizeBytes);
     void setBoardConfig(BoardConfig board);
+    std::pair<std::shared_ptr<dai::node::Camera>, std::shared_ptr<dai::node::Camera>> getStereoPair() const;
+    bool hasDynamicCalibration() const;
+
     BoardConfig getBoardConfig() const;
 
     void serialize(PipelineSchema& schema, Assets& assets, std::vector<std::uint8_t>& assetStorage, SerializationType type = DEFAULT_SERIALIZATION_TYPE) const;
@@ -137,9 +143,6 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
 
     // Output queues
     std::vector<std::shared_ptr<MessageQueue>> outputQueues;
-
-    // parent
-    Pipeline& parent;
 
     // is pipeline running
     AtomicBool running{false};
@@ -445,6 +448,11 @@ class Pipeline {
         impl()->setCameraTuningBlobPath(path);
     }
 
+    /// Set a camera IQ (Image Quality) tuning blob, used for specific board socket
+    void setCameraTuningBlobPath(CameraBoardSocket socket, const fs::path& path) {
+        impl()->setCameraTuningBlobPath(socket, path);
+    }
+
     /**
      * Set chunk size for splitting device-sent XLink packets, in bytes. A larger value could
      * increase performance, with 0 disabling chunking. A negative value won't modify the
@@ -538,6 +546,7 @@ class Pipeline {
 
     /// Pipeline debugging
     void enablePipelineDebugging(bool enable = true);
+    bool isPipelineDebuggingEnabled() const;
 
     // Access to pipeline state queues
     std::shared_ptr<MessageQueue> getPipelineStateOut() const;

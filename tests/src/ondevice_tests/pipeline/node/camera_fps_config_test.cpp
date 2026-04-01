@@ -2,8 +2,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <chrono>
+#include <cstdlib>
 #include <thread>
 
+#include "XLink/XLinkPublicDefines.h"
 #include "depthai/capabilities/ImgFrameCapability.hpp"
 #include "depthai/common/CameraBoardSocket.hpp"
 #include "depthai/common/CameraFeatures.hpp"
@@ -15,13 +17,14 @@
 
 TEST_CASE("Camera sensor configs configurations") {
     // Test that cameras can stream at all advertised configs
-    // For RVC4 there are currently some limitations:
-    // Max 240 FPS and it has to be rounded down
-    // Minimum FPS is incorrectly advertised, so this test sets the minimum to 5 FPS.
     using std::chrono::steady_clock;
-    const auto RESET_REMOTE_TIMEOUT_MS = std::chrono::milliseconds(2000);
-
+    constexpr auto RESET_REMOTE_TIMEOUT_MS = std::chrono::milliseconds(2000);
+    // Minimum FPS is incorrectly advertised, so this test sets the minimum to 8 FPS.
     constexpr float MINIMUM_FPS_RVC4 = 8.0f;  // TODO(Jakob) - remove this when fixed on device side
+
+    // Maximum FPS on RVC2 is 120, because of 3A limitations
+    constexpr float MAXIMUM_FPS_RVC2 = 120.0f;
+
     dai::DeviceInfo connectedDeviceInfo;
     std::vector<dai::CameraFeatures> connectedCameraFeautres;
     {
@@ -33,20 +36,9 @@ TEST_CASE("Camera sensor configs configurations") {
 
     for(const auto& cameraFeatures : connectedCameraFeautres) {
         for(const auto& config : cameraFeatures.configs) {
-            float maxFps = config.maxFps;
-            if(config.maxFps > 240.5f) {
-                std::cout << "Skipping testing high fps on camera " << cameraFeatures.socket << " with max fps " << config.maxFps << " on device "
-                          << connectedDeviceInfo.getDeviceId() << "\n"
-                          << std::flush;
-                continue;
-            }
-            if(config.maxFps > 120.0f) {
-                // round down to nearest integer fps for high fps values to avoid issues with non integer fps settings
-                // TODO(Jakob) - fix this on device side when HFR is implemented
-                maxFps = static_cast<float>(static_cast<int>(config.maxFps));
-            }
             auto minimumFps = connectedDeviceInfo.platform == X_LINK_RVC4 ? std::max(MINIMUM_FPS_RVC4, config.minFps) : config.minFps;
-            for(const auto& fpsVariant : {maxFps, minimumFps}) {
+            auto maximumFps = connectedDeviceInfo.platform == X_LINK_MYRIAD_X ? std::min(MAXIMUM_FPS_RVC2, config.maxFps) : config.maxFps;
+            for(const auto& fpsVariant : {maximumFps, minimumFps}) {
                 std::cout << "Testing camera " << cameraFeatures.socket << " with resolution " << config.width << "x" << config.height << " at fps "
                           << fpsVariant << " on device " << connectedDeviceInfo.getDeviceId() << "\n"
                           << std::flush;
@@ -110,8 +102,13 @@ TEST_CASE("Camera pool sizes") {
         std::vector<int> outQueuesCounter;
         std::vector<std::shared_ptr<dai::node::Camera>> cameras;
         auto script = pipeline.create<dai::node::Script>();
-        // Default size of the pool for RVC2 is 3 and RVC4 is 7
-        int queueSize = overrideQueueSize == -1 ? (isRvc4 ? 7 : 3) : overrideQueueSize;
+        // If startup AutoCalibration is enabled globally, default pool count is increased by 3.
+        const char* autoCalibrationEnv = std::getenv("DEPTHAI_AUTOCALIBRATION");
+        const bool autoCalibrationOnStartup =
+            autoCalibrationEnv != nullptr && (std::string(autoCalibrationEnv) == "ON_START" || std::string(autoCalibrationEnv) == "CONTINUOUS");
+        const int defaultQueueSizeBase = isRvc4 ? 7 : 3;
+        const int defaultQueueSize = defaultQueueSizeBase + (autoCalibrationOnStartup ? 3 : 0);
+        int queueSize = overrideQueueSize == -1 ? defaultQueueSize : overrideQueueSize;
         for(const auto& [socket, resolutions] : streams) {
             auto camera = pipeline.create<dai::node::Camera>()->build(socket);
             camera->properties.maxSizePoolOutputs = 1 * 1024 * 1024 * 1024;  // 1G size limit to only test num frames limitation
