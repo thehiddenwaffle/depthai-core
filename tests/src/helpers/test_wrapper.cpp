@@ -34,9 +34,14 @@ int main(int argc, char* argv[]) {
 
     try {
         auto devicesBefore = 0;
+        std::string targetDeviceId;
 
         while(devicesBefore < 1) {
-            devicesBefore = dai::Device::getAllAvailableDevices().size();
+            auto availableDevices = dai::Device::getAllAvailableDevices();
+            devicesBefore = static_cast<int>(availableDevices.size());
+            if(targetDeviceId.empty() && !availableDevices.empty()) {
+                targetDeviceId = availableDevices.front().getDeviceId();
+            }
             std::cout << "Devices now: " << devicesBefore << std::endl;
             std::this_thread::sleep_for(std::chrono::seconds(5));
         }
@@ -102,6 +107,44 @@ int main(int argc, char* argv[]) {
         // 2 signifies that proc was killed by a timeout
         if(retcode == 2) {
             retcode = 0;
+        }
+
+        if(retcode != 0) {
+            // Minimal post-failure sweep: connect once and let built-in close path
+            // extract/clear any existing crash dump for the just-failed test.
+            try {
+                bool found = false;
+                dai::DeviceInfo deviceInfo;
+                auto startSweep = std::chrono::steady_clock::now();
+                while(!found && std::chrono::steady_clock::now() - startSweep < std::chrono::seconds(15)) {
+                    if(!targetDeviceId.empty()) {
+                        std::tie(found, deviceInfo) = dai::Device::getDeviceById(targetDeviceId);
+                        if(!found) {
+                            for(const auto& info : dai::Device::getAllConnectedDevices()) {
+                                if(info.getDeviceId() == targetDeviceId) {
+                                    deviceInfo = info;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if(!found) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    }
+                }
+                if(found) {
+                    dai::Device::Config config;
+                    config.logLevel = dai::LogLevel::CRITICAL;
+                    config.outputLogLevel = dai::LogLevel::CRITICAL;
+                    dai::Device crashDumpSweep(config, deviceInfo);
+                    std::cout << "Post-failure crash dump sweep attempted." << std::endl;
+                } else {
+                    std::cout << "Post-failure crash dump sweep skipped (no device)." << std::endl;
+                }
+            } catch(const std::exception& ex) {
+                std::cout << "[wrapper] Post-failure crash dump sweep failed: " << ex.what() << std::endl;
+            }
         }
 
         return retcode;
