@@ -1,8 +1,10 @@
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include "depthai/depthai.hpp"
@@ -37,14 +39,30 @@ int main(int argc, char* argv[]) {
         std::string targetDeviceId;
 
         while(devicesBefore < 1) {
-            auto availableDevices = dai::Device::getAllAvailableDevices();
-            devicesBefore = static_cast<int>(availableDevices.size());
-            if(targetDeviceId.empty() && !availableDevices.empty()) {
-                targetDeviceId = availableDevices.front().getDeviceId();
-            }
+            devicesBefore = dai::Device::getAllAvailableDevices().size();
             std::cout << "Devices now: " << devicesBefore << std::endl;
             std::this_thread::sleep_for(std::chrono::seconds(5));
         }
+
+        // Mirror child auto-selection logic, then pin child to that same device id.
+        bool foundTargetDevice = false;
+        dai::DeviceInfo targetDeviceInfo;
+        std::tie(foundTargetDevice, targetDeviceInfo) = dai::Device::getAnyAvailableDevice();
+        if(foundTargetDevice) {
+            targetDeviceId = targetDeviceInfo.getDeviceId();
+        }
+        if(!targetDeviceId.empty()) {
+#ifdef _WIN32
+            _putenv_s("DEPTHAI_DEVICE_ID_LIST", targetDeviceId.c_str());
+#else
+            setenv("DEPTHAI_DEVICE_ID_LIST", targetDeviceId.c_str(), 1);
+#endif
+            std::cout << "Pinned child process to device id: " << targetDeviceId << std::endl;
+        } else {
+            std::cout << "No target device id resolved; child will select device automatically." << std::endl;
+        }
+        // Re-baseline after potential filtering via DEPTHAI_DEVICE_ID_LIST.
+        devicesBefore = static_cast<int>(dai::Device::getAllAvailableDevices().size());
 
         // Run the process with captured output and timeout
         auto start = std::chrono::steady_clock::now();
@@ -97,7 +115,8 @@ int main(int argc, char* argv[]) {
 
         // Device recovery wait
         std::cout << "Devices before: " << devicesBefore << std::endl;
-        while(devicesBefore > dai::Device::getAllAvailableDevices().size()) {
+        auto recoveryStart = std::chrono::steady_clock::now();
+        while(devicesBefore > dai::Device::getAllAvailableDevices().size() && std::chrono::steady_clock::now() - recoveryStart < std::chrono::seconds(30)) {
             std::this_thread::sleep_for(std::chrono::seconds(5));
             std::cout << "Devices now: " << dai::Device::getAllAvailableDevices().size() << std::endl;
         }
@@ -110,8 +129,8 @@ int main(int argc, char* argv[]) {
         }
 
         if(retcode != 0) {
-            // Minimal post-failure sweep: connect once and let built-in close path
-            // extract/clear any existing crash dump for the just-failed test.
+            // Post-failure sweep: reconnect to the same device and let close path
+            // extract/clear any pending crash dump created by ungraceful disconnect.
             try {
                 bool found = false;
                 dai::DeviceInfo deviceInfo;
@@ -120,14 +139,10 @@ int main(int argc, char* argv[]) {
                     if(!targetDeviceId.empty()) {
                         std::tie(found, deviceInfo) = dai::Device::getDeviceById(targetDeviceId);
                         if(!found) {
-                            for(const auto& info : dai::Device::getAllConnectedDevices()) {
-                                if(info.getDeviceId() == targetDeviceId) {
-                                    deviceInfo = info;
-                                    found = true;
-                                    break;
-                                }
-                            }
+                            std::tie(found, deviceInfo) = dai::XLinkConnection::getDeviceById(targetDeviceId, X_LINK_ANY_STATE, false);
                         }
+                    } else {
+                        break;
                     }
                     if(!found) {
                         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -139,8 +154,10 @@ int main(int argc, char* argv[]) {
                     config.outputLogLevel = dai::LogLevel::CRITICAL;
                     dai::Device crashDumpSweep(config, deviceInfo);
                     std::cout << "Post-failure crash dump sweep attempted." << std::endl;
+                } else if(targetDeviceId.empty()) {
+                    std::cout << "Post-failure crash dump sweep skipped (no target device id)." << std::endl;
                 } else {
-                    std::cout << "Post-failure crash dump sweep skipped (no device)." << std::endl;
+                    std::cout << "Post-failure crash dump sweep skipped (device not found)." << std::endl;
                 }
             } catch(const std::exception& ex) {
                 std::cout << "[wrapper] Post-failure crash dump sweep failed: " << ex.what() << std::endl;
