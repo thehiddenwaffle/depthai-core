@@ -186,6 +186,8 @@ bool deserializationSupported(DatatypeEnum datatype) {
         case DatatypeEnum::VppConfig:
         case DatatypeEnum::DynamicCalibrationControl:
         case DatatypeEnum::DynamicCalibrationResult:
+        case DatatypeEnum::AutoCalibrationConfig:
+        case DatatypeEnum::AutoCalibrationResult:
         case DatatypeEnum::CalibrationQuality:
         case DatatypeEnum::CalibrationMetrics:
         case DatatypeEnum::CoverageData:
@@ -193,6 +195,7 @@ bool deserializationSupported(DatatypeEnum datatype) {
         case DatatypeEnum::PipelineState:
         case DatatypeEnum::PipelineEventAggregationConfig:
         case DatatypeEnum::PacketizedData:
+        case DatatypeEnum::COUNT:
             return false;
     }
     return false;
