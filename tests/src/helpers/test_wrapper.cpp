@@ -123,10 +123,6 @@ int main(int argc, char* argv[]) {
 
         // Now we can safely check the return code
         int retcode = proc.retcode();
-        // 2 signifies that proc was killed by a timeout
-        if(retcode == 2) {
-            retcode = 0;
-        }
 
         if(retcode != 0) {
             // Post-failure sweep: reconnect to the same device and let close path
@@ -153,7 +149,13 @@ int main(int argc, char* argv[]) {
                     config.logLevel = dai::LogLevel::CRITICAL;
                     config.outputLogLevel = dai::LogLevel::CRITICAL;
                     dai::Device crashDumpSweep(config, deviceInfo);
-                    std::cout << "Post-failure crash dump sweep attempted." << std::endl;
+                    if(crashDumpSweep.hasCrashDump()) {
+                        // Clear pending crash dump without triggering deferred logging in a later test.
+                        (void)crashDumpSweep.getCrashDump(true);
+                        std::cout << "Post-failure crash dump sweep cleared pending crash dump." << std::endl;
+                    } else {
+                        std::cout << "Post-failure crash dump sweep found no pending crash dump." << std::endl;
+                    }
                 } else if(targetDeviceId.empty()) {
                     std::cout << "Post-failure crash dump sweep skipped (no target device id)." << std::endl;
                 } else {
@@ -162,6 +164,11 @@ int main(int argc, char* argv[]) {
             } catch(const std::exception& ex) {
                 std::cout << "[wrapper] Post-failure crash dump sweep failed: " << ex.what() << std::endl;
             }
+        }
+
+        // 2 signifies that proc was killed by a timeout
+        if(retcode == 2) {
+            retcode = 0;
         }
 
         return retcode;
