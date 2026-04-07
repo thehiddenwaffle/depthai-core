@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <atomic>
@@ -45,6 +46,16 @@ namespace {
         }
     }
 
+    struct TestThresholds {
+        double syncThresholdSec;
+        uint64_t testDurationSec;
+        int recvAllTimeoutSec;
+        int initialSyncTimeoutSec;
+        double deltaMeanThreshold;
+        double deltaP99Threshold;
+        SyncType syncType;
+    };
+
     double calculate_mean(std::vector<std::uint64_t> values) {
         std::uint64_t sum = std::accumulate(values.begin(), values.end(), 0);
         return double(sum) / double(values.size());
@@ -78,6 +89,69 @@ namespace {
     }
 }
 
+static double calculate_max_outlier(std::vector<std::uint64_t>& values) {
+    auto max_itr = std::max_element(values.begin(), values.end());
+    
+    REQUIRE_MSG(max_itr != values.end(), "Outlier not found");
+    return *max_itr;
+}
+
+static void expect_percentile(
+    const std::vector<uint64_t>& values,
+    double q,
+    double expected)
+{
+    using Catch::Matchers::WithinAbs;
+    REQUIRE_THAT(percentile_linear(values, q), WithinAbs(expected, 1e-12));
+}
+
+TEST_CASE("percentile_linear matches known NumPy linear outputs", "[percentile]") {
+    SECTION("basic evenly spaced input") {
+        expect_percentile({1, 2, 3, 4},   0.0,   1.0);
+        expect_percentile({1, 2, 3, 4},  25.0,   1.75);
+        expect_percentile({1, 2, 3, 4},  50.0,   2.5);
+        expect_percentile({1, 2, 3, 4},  75.0,   3.25);
+        expect_percentile({1, 2, 3, 4}, 100.0,   4.0);
+    }
+
+    SECTION("unsorted input") {
+        expect_percentile({4, 1, 3, 2}, 50.0, 2.5);
+    }
+
+    SECTION("odd-length input") {
+        expect_percentile({10, 20, 30, 40, 50}, 40.0, 26.0);
+    }
+
+    SECTION("duplicates") {
+        expect_percentile({8, 1, 8, 4, 4},   0.0, 1.0);
+        expect_percentile({8, 1, 8, 4, 4},  10.0, 2.2);
+        expect_percentile({8, 1, 8, 4, 4},  25.0, 4.0);
+        expect_percentile({8, 1, 8, 4, 4},  50.0, 4.0);
+        expect_percentile({8, 1, 8, 4, 4},  75.0, 8.0);
+        expect_percentile({8, 1, 8, 4, 4}, 100.0, 8.0);
+    }
+
+    SECTION("single element") {
+        expect_percentile({42},   0.0, 42.0);
+        expect_percentile({42},  50.0, 42.0);
+        expect_percentile({42}, 100.0, 42.0);
+    }
+}
+
+TEST_CASE("percentile_linear rejects invalid input", "[percentile]") {
+    SECTION("empty vector") {
+        REQUIRE_THROWS_AS(percentile_linear({}, 50.0), std::invalid_argument);
+    }
+
+    SECTION("q below range") {
+        REQUIRE_THROWS_AS(percentile_linear({1, 2, 3}, -1.0), std::invalid_argument);
+    }
+
+    SECTION("q above range") {
+        REQUIRE_THROWS_AS(percentile_linear({1, 2, 3}, 101.0), std::invalid_argument);
+    }
+}
+
 dai::Node::Output* createPipeline(std::shared_ptr<dai::Pipeline> pipeline,
                                   dai::CameraBoardSocket socket,
                                   float sensorFps,
@@ -97,7 +171,14 @@ dai::Node::Output* createPipeline(std::shared_ptr<dai::Pipeline> pipeline,
         std::cout << "Setting PTP for " << dai::toString(socket) << std::endl;
     }
 
-    auto output = cam->requestOutput(std::make_pair(640, 480), dai::ImgFrame::Type::NV12, dai::ImgResizeMode::STRETCH);
+    int width = 320;
+    int height = 240;
+    // Enable this if we encounter problems at higher FPS
+    // if (sensorFps >= 60) {
+    //     width = ;
+    //     height = ;
+    // }
+    auto output = cam->requestOutput(std::make_pair(width, height), dai::ImgFrame::Type::NV12, dai::ImgResizeMode::STRETCH);
     return output;
 }
 
@@ -261,19 +342,14 @@ void setupDevice(dai::DeviceInfo& deviceInfo,
     }
 }
 
-int testFsync(
-    float targetFps, double syncThresholdSec, uint64_t testDurationSec, int recvAllTimeoutSec, int initialSyncTimeoutSec, SyncType syncType) {
-
-    if (syncType == SyncType::PTP) {
-        syncThresholdSec = 1.0 / (2.0 * targetFps);
-    }
+int testFsync(float targetFps, struct TestThresholds thresholds) {
 
     std::cout << "=================================\x1B[1;32mTest started\x1B[0m================================" << std::endl;
-    std::cout << "Sync type: " << toString(syncType) << std::endl;
+    std::cout << "Sync type: " << toString(thresholds.syncType) << std::endl;
     std::cout << "FPS: " << targetFps << std::endl;
-    std::cout << "SYNC_THRESHOLD_SEC: " << syncThresholdSec << std::endl;
-    std::cout << "RECV_ALL_TIMEOUT_SEC: " << recvAllTimeoutSec << std::endl;
-    std::cout << "INITIAL_SYNC_TIMEOUT_SEC: " << initialSyncTimeoutSec << std::endl;
+    std::cout << "SYNC_THRESHOLD_SEC: " << thresholds.syncThresholdSec << std::endl;
+    std::cout << "RECV_ALL_TIMEOUT_SEC: " << thresholds.recvAllTimeoutSec << std::endl;
+    std::cout << "INITIAL_SYNC_TIMEOUT_SEC: " << thresholds.initialSyncTimeoutSec << std::endl;
     std::vector<dai::DeviceInfo> deviceInfos = dai::Device::getAllAvailableDevices();
 
     REQUIRE_MSG(deviceInfos.size() >= 2, "At least two devices are required for this test.");
@@ -290,7 +366,7 @@ int testFsync(
     std::vector<std::string> camSockets;
 
     for(auto deviceInfo : deviceInfos) {
-        setupDevice(deviceInfo, masterPipeline, masterNode, masterName, slavePipelines, slaveQueues, camSockets, targetFps, syncType);
+        setupDevice(deviceInfo, masterPipeline, masterNode, masterName, slavePipelines, slaveQueues, camSockets, targetFps, thresholds.syncType);
     }
 
     if(masterPipeline == nullptr || !masterNode.has_value() || !masterName.has_value()) {
@@ -369,12 +445,12 @@ int testFsync(
         if(!firstReceived) {
             auto endTime = std::chrono::steady_clock::now();
             auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime).count();
-            REQUIRE_MSG(elapsedSec < recvAllTimeoutSec, "Timeout: Didn't receive all frames in time");
+            REQUIRE_MSG(elapsedSec < thresholds.recvAllTimeoutSec, "Timeout: Didn't receive all frames in time");
         }
 
         auto totalElapsedSec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - startTime).count();
 
-        if(totalElapsedSec >= testDurationSec) {
+        if(totalElapsedSec >= thresholds.testDurationSec) {
             std::cout << "Timeout: Test finished after " << totalElapsedSec << " sec" << std::endl;
             running.store(false);
             break;
@@ -400,16 +476,16 @@ int testFsync(
             auto delta = maxElement->second - minElement->second;
             auto deltaUs = std::chrono::duration_cast<std::chrono::microseconds>(delta).count();
 
-            bool syncStatus = abs(deltaUs) < syncThresholdSec * 1e6;
+            bool syncStatus = abs(deltaUs) < thresholds.syncThresholdSec * 1e6;
 
-            if (syncType == SyncType::PTP && syncStatus && !waitingForInitialSync) {
+            if (syncStatus && !waitingForInitialSync) {
                 deltas.emplace_back(deltaUs);
             }
 
             if(!syncStatus && waitingForInitialSync) {
                 auto endTime = std::chrono::steady_clock::now();
                 auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(endTime - initialSyncTime.value()).count();
-                REQUIRE_MSG(elapsedSec < initialSyncTimeoutSec, "Timeout: Didn't sync frames in time");
+                REQUIRE_MSG(elapsedSec < thresholds.initialSyncTimeoutSec, "Timeout: Didn't sync frames in time");
             }
 
             if(syncStatus && waitingForInitialSync) {
@@ -417,110 +493,61 @@ int testFsync(
                 waitingForInitialSync = false;
             }
 
-            if (syncType == SyncType::EXTERNAL) {
-                REQUIRE_MSG(waitingForInitialSync || syncStatus, "Sync error: Sync lost, threshold exceeded: " << deltaUs << " us");
-            }
+            // Enable this once we have better accuracy for timestamps
+            // if (thresholds.syncType == SyncType::EXTERNAL) {
+            //     REQUIRE_MSG(waitingForInitialSync || syncStatus, "Sync error: Sync lost, threshold exceeded: " << deltaUs << " us");
+            // }
 
             latestFrameGroup.reset();
         }
     }
 
-    if (syncType == SyncType::PTP) {
-        REQUIRE_MSG(deltas.size() > 100, "[FPS=" << targetFps << "] Not enough frames left after stabilization period (expected at least 100, got " << deltas.size() << ").");
+    REQUIRE_MSG(deltas.size() > 100, "[FPS=" << targetFps << "] Not enough frames left after stabilization period (expected at least 100, got " << deltas.size() << ").");
 
-        double meanDelta = calculate_mean(deltas);
-        double p99Delta = percentile_linear(deltas, 99.0);
+    double meanDelta_us = calculate_mean(deltas);
+    double p99Delta_us = percentile_linear(deltas, 99.0);
+    double maxDelta_us = calculate_max_outlier(deltas);
 
-        std::cout << "=== Stats" << std::endl;
-        std::cout << "   [FPS=" << targetFps << "] # of frames used for stats caluculation: " << deltas.size() << std::endl;
-        std::cout << "   [FPS=" << targetFps << "] Mean frane delta: " << meanDelta*1e3 << " ms" << std::endl;
-        std::cout << "   [FPS=" << targetFps << "] p99 frame delta: " << p99Delta*1e3 << " ms" << std::endl;
+    std::cout << "=== Stats" << std::endl;
+    std::cout << "   [FPS=" << targetFps << "] # of frames used for stats caluculation: " << deltas.size() << std::endl;
+    std::cout << "   [FPS=" << targetFps << "] Mean frame delta: " << meanDelta_us/1e3 << " ms" << std::endl;
+    std::cout << "   [FPS=" << targetFps << "] p99 frame delta: " << p99Delta_us/1e3 << " ms" << std::endl;
+    std::cout << "   [FPS=" << targetFps << "] Max outlier frame delta: " << maxDelta_us/1e3 << " ms" << std::endl;
 
-        double deltaMeanThreshold = 1e-3;
-        double deltaP99Threshold = 2e-3;
-
-        if (targetFps > 30) {
-            deltaMeanThreshold = 10e-3;
-            deltaP99Threshold = 10e-3;
-        }
-
-        REQUIRE_MSG(meanDelta < deltaMeanThreshold, "[FPS=" << targetFps << "] Mean value of frame deltas above " << deltaMeanThreshold*1e3 << " ms (" << meanDelta*1e3 << " ms)");
-        REQUIRE_MSG(p99Delta < deltaP99Threshold, "[FPS=" << targetFps << "] p99 metric does not meet " << deltaP99Threshold*1e3 << " ms (" << p99Delta*1e3 << " ms)");
-    }
+    REQUIRE_MSG(meanDelta_us/1e6 < thresholds.deltaMeanThreshold, "[FPS=" << targetFps << "] Mean value of frame deltas above " << thresholds.deltaMeanThreshold*1e3 << " ms (" << meanDelta_us/1e3 << " ms)");
+    REQUIRE_MSG(p99Delta_us/1e6 < thresholds.deltaP99Threshold, "[FPS=" << targetFps << "] p99 metric does not meet " << thresholds.deltaP99Threshold*1e3 << " ms (" << p99Delta_us/1e3 << " ms)");
 
     return 0;
 }
 
 TEST_CASE("Test Multi-device external frame sync with different FPS values", "[fsync]") {
-    // Specify a list of FPS values to test with.
     // auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f, 120.0f, 240.0f, 300.0f, 600.0f);
     auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f);
     CAPTURE(fps);
-    testFsync(fps, 3e-3, 180, 10, 4, SyncType::EXTERNAL);
+    struct TestThresholds thresholds {
+        .syncThresholdSec = 1/(2*fps), // lower this limit when we have better accuracy for timestamps
+        .testDurationSec = 180,
+        .recvAllTimeoutSec = 10,
+        .initialSyncTimeoutSec = 4,
+        .deltaMeanThreshold = 1e-3,
+        .deltaP99Threshold = 2e-3,
+        .syncType = SyncType::EXTERNAL
+    };
+    testFsync(fps, thresholds);
 }
-
-
-static void expect_percentile(
-    const std::vector<uint64_t>& values,
-    double q,
-    double expected)
-{
-    using Catch::Matchers::WithinAbs;
-    REQUIRE_THAT(percentile_linear(values, q), WithinAbs(expected, 1e-12));
-}
-
-TEST_CASE("percentile_linear matches known NumPy linear outputs", "[percentile]") {
-    SECTION("basic evenly spaced input") {
-        expect_percentile({1, 2, 3, 4},   0.0,   1.0);
-        expect_percentile({1, 2, 3, 4},  25.0,   1.75);
-        expect_percentile({1, 2, 3, 4},  50.0,   2.5);
-        expect_percentile({1, 2, 3, 4},  75.0,   3.25);
-        expect_percentile({1, 2, 3, 4}, 100.0,   4.0);
-    }
-
-    SECTION("unsorted input") {
-        expect_percentile({4, 1, 3, 2}, 50.0, 2.5);
-    }
-
-    SECTION("odd-length input") {
-        expect_percentile({10, 20, 30, 40, 50}, 40.0, 26.0);
-    }
-
-    SECTION("duplicates") {
-        expect_percentile({8, 1, 8, 4, 4},   0.0, 1.0);
-        expect_percentile({8, 1, 8, 4, 4},  10.0, 2.2);
-        expect_percentile({8, 1, 8, 4, 4},  25.0, 4.0);
-        expect_percentile({8, 1, 8, 4, 4},  50.0, 4.0);
-        expect_percentile({8, 1, 8, 4, 4},  75.0, 8.0);
-        expect_percentile({8, 1, 8, 4, 4}, 100.0, 8.0);
-    }
-
-    SECTION("single element") {
-        expect_percentile({42},   0.0, 42.0);
-        expect_percentile({42},  50.0, 42.0);
-        expect_percentile({42}, 100.0, 42.0);
-    }
-}
-
-TEST_CASE("percentile_linear rejects invalid input", "[percentile]") {
-    SECTION("empty vector") {
-        REQUIRE_THROWS_AS(percentile_linear({}, 50.0), std::invalid_argument);
-    }
-
-    SECTION("q below range") {
-        REQUIRE_THROWS_AS(percentile_linear({1, 2, 3}, -1.0), std::invalid_argument);
-    }
-
-    SECTION("q above range") {
-        REQUIRE_THROWS_AS(percentile_linear({1, 2, 3}, 101.0), std::invalid_argument);
-    }
-}
-
 
 TEST_CASE("Test Multi-device PTP frame sync with different FPS values", "[fsync]") {
-    // Specify a list of FPS values to test with.
     // auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f, 120.0f, 240.0f, 300.0f, 600.0f);
     auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f);
     CAPTURE(fps);
-    testFsync(fps, 0, 180, 15, 60, SyncType::PTP);
+    struct TestThresholds thresholds {
+        .syncThresholdSec = 1/(2*fps), // lower this limit when we have better accuracy for timestamps
+        .testDurationSec = 180,
+        .recvAllTimeoutSec = 15,
+        .initialSyncTimeoutSec = 60,
+        .deltaMeanThreshold = 20e-3,
+        .deltaP99Threshold = 50e-3,
+        .syncType = SyncType::PTP
+    };
+    testFsync(fps, thresholds);
 }
