@@ -149,13 +149,7 @@ int main(int argc, char* argv[]) {
                     config.logLevel = dai::LogLevel::CRITICAL;
                     config.outputLogLevel = dai::LogLevel::CRITICAL;
                     dai::Device crashDumpSweep(config, deviceInfo);
-                    if(crashDumpSweep.hasCrashDump()) {
-                        // Clear pending crash dump without triggering deferred logging in a later test.
-                        (void)crashDumpSweep.getCrashDump(true);
-                        std::cout << "Post-failure crash dump sweep cleared pending crash dump." << std::endl;
-                    } else {
-                        std::cout << "Post-failure crash dump sweep found no pending crash dump." << std::endl;
-                    }
+                    std::cout << "Post-failure crash dump sweep attempted." << std::endl;
                 } else if(targetDeviceId.empty()) {
                     std::cout << "Post-failure crash dump sweep skipped (no target device id)." << std::endl;
                 } else {
