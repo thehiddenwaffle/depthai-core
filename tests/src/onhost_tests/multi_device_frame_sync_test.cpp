@@ -51,6 +51,7 @@ namespace {
         uint64_t testDurationSec;
         int recvAllTimeoutSec;
         int initialSyncTimeoutSec;
+        int initialTimeoutSec;
         double deltaMeanThreshold;
         double deltaP99Threshold;
         SyncType syncType;
@@ -395,6 +396,10 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
     std::vector<uint64_t> deltas;
 
     bool waitingForInitialSync = true;
+    bool waitingForInitialTimeout = true;
+    if (thresholds.initialTimeoutSec == 0) {
+        waitingForInitialTimeout = false;
+    }
     std::atomic_bool running{true};
 
     auto dataCollector = [&](const std::string& deviceName, const std::string& socketName) {
@@ -478,7 +483,15 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
 
             bool syncStatus = abs(deltaUs) < thresholds.syncThresholdSec * 1e6;
 
-            if (syncStatus && !waitingForInitialSync) {
+            if (waitingForInitialTimeout) {
+                auto endTime = std::chrono::steady_clock::now();
+                auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(endTime - initialSyncTime.value()).count();
+                if (elapsedSec >= thresholds.initialTimeoutSec) {
+                    waitingForInitialSync = false;
+                }
+            }
+
+            if (syncStatus && !waitingForInitialSync && !waitingForInitialTimeout) {
                 deltas.emplace_back(deltaUs);
             }
 
@@ -529,6 +542,7 @@ TEST_CASE("Test Multi-device external frame sync with different FPS values", "[f
         .testDurationSec = 180,
         .recvAllTimeoutSec = 10,
         .initialSyncTimeoutSec = 4,
+        .initialTimeoutSec = 0,
         .deltaMeanThreshold = 1e-3,
         .deltaP99Threshold = 2e-3,
         .syncType = SyncType::EXTERNAL
@@ -545,6 +559,7 @@ TEST_CASE("Test Multi-device PTP frame sync with different FPS values", "[fsync]
         .testDurationSec = 180,
         .recvAllTimeoutSec = 15,
         .initialSyncTimeoutSec = 60,
+        .initialTimeoutSec = 60,
         .deltaMeanThreshold = 20e-3,
         .deltaP99Threshold = 50e-3,
         .syncType = SyncType::PTP
