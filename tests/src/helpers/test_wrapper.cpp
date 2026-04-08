@@ -124,9 +124,10 @@ int main(int argc, char* argv[]) {
         // Now we can safely check the return code
         int retcode = proc.retcode();
 
+        bool crashDumpFound = false;
         if(retcode != 0) {
-            // Post-failure sweep: reconnect to the same device and let close path
-            // extract/clear any pending crash dump created by ungraceful disconnect.
+            // Post-failure sweep: reconnect to the same device and check if a pending
+            // crash dump exists for this failed run.
             try {
                 bool found = false;
                 dai::DeviceInfo deviceInfo;
@@ -149,7 +150,12 @@ int main(int argc, char* argv[]) {
                     config.logLevel = dai::LogLevel::CRITICAL;
                     config.outputLogLevel = dai::LogLevel::CRITICAL;
                     dai::Device crashDumpSweep(config, deviceInfo);
-                    std::cout << "Post-failure crash dump sweep attempted." << std::endl;
+                    crashDumpFound = crashDumpSweep.hasCrashDump();
+                    if(crashDumpFound) {
+                        std::cout << "Post-failure crash dump sweep found pending crash dump." << std::endl;
+                    } else {
+                        std::cout << "Post-failure crash dump sweep found no pending crash dump." << std::endl;
+                    }
                 } else if(targetDeviceId.empty()) {
                     std::cout << "Post-failure crash dump sweep skipped (no target device id)." << std::endl;
                 } else {
@@ -161,7 +167,7 @@ int main(int argc, char* argv[]) {
         }
 
         // 2 signifies that proc was killed by a timeout
-        if(retcode == 2) {
+        if(retcode == 2 && !crashDumpFound) {
             retcode = 0;
         }
 
