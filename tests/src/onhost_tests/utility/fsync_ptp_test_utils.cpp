@@ -1,3 +1,5 @@
+#include "fsync_ptp_test_utils.hpp"
+
 #include <algorithm>
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -31,31 +33,6 @@
     }
 
 namespace {
-    enum class SyncType {
-        EXTERNAL,
-        PTP,
-    };
-
-    std::string toString(SyncType syncType) {
-        if(syncType == SyncType::EXTERNAL) {
-            return "external";
-        } else if(syncType == SyncType::PTP) {
-            return "PTP";
-        } else {
-            throw std::runtime_error("Unknown sync type");
-        }
-    }
-
-    struct TestThresholds {
-        double syncThresholdSec;
-        uint64_t testDurationSec;
-        int recvAllTimeoutSec;
-        int initialSyncTimeoutSec;
-        int initialTimeoutSec;
-        double deltaMeanThreshold;
-        double deltaP99Threshold;
-        SyncType syncType;
-    };
 
     double calculate_mean(std::vector<std::uint64_t> values) {
         std::uint64_t sum = std::accumulate(values.begin(), values.end(), 0);
@@ -88,68 +65,31 @@ namespace {
 
         return lower_value + (upper_value - lower_value) * fraction;
     }
-}
 
-static double calculate_max_outlier(std::vector<std::uint64_t>& values) {
-    auto max_itr = std::max_element(values.begin(), values.end());
-    
-    REQUIRE_MSG(max_itr != values.end(), "Outlier not found");
-    return *max_itr;
-}
-
-static void expect_percentile(
-    const std::vector<uint64_t>& values,
-    double q,
-    double expected)
-{
-    using Catch::Matchers::WithinAbs;
-    REQUIRE_THAT(percentile_linear(values, q), WithinAbs(expected, 1e-12));
-}
-
-TEST_CASE("percentile_linear matches known NumPy linear outputs", "[percentile]") {
-    SECTION("basic evenly spaced input") {
-        expect_percentile({1, 2, 3, 4},   0.0,   1.0);
-        expect_percentile({1, 2, 3, 4},  25.0,   1.75);
-        expect_percentile({1, 2, 3, 4},  50.0,   2.5);
-        expect_percentile({1, 2, 3, 4},  75.0,   3.25);
-        expect_percentile({1, 2, 3, 4}, 100.0,   4.0);
+    double calculate_max_outlier(std::vector<std::uint64_t>& values) {
+        auto max_itr = std::max_element(values.begin(), values.end());
+        
+        REQUIRE_MSG(max_itr != values.end(), "Outlier not found");
+        return *max_itr;
     }
 
-    SECTION("unsorted input") {
-        expect_percentile({4, 1, 3, 2}, 50.0, 2.5);
-    }
-
-    SECTION("odd-length input") {
-        expect_percentile({10, 20, 30, 40, 50}, 40.0, 26.0);
-    }
-
-    SECTION("duplicates") {
-        expect_percentile({8, 1, 8, 4, 4},   0.0, 1.0);
-        expect_percentile({8, 1, 8, 4, 4},  10.0, 2.2);
-        expect_percentile({8, 1, 8, 4, 4},  25.0, 4.0);
-        expect_percentile({8, 1, 8, 4, 4},  50.0, 4.0);
-        expect_percentile({8, 1, 8, 4, 4},  75.0, 8.0);
-        expect_percentile({8, 1, 8, 4, 4}, 100.0, 8.0);
-    }
-
-    SECTION("single element") {
-        expect_percentile({42},   0.0, 42.0);
-        expect_percentile({42},  50.0, 42.0);
-        expect_percentile({42}, 100.0, 42.0);
+    void expect_percentile(
+        const std::vector<uint64_t>& values,
+        double q,
+        double expected)
+    {
+        using Catch::Matchers::WithinAbs;
+        REQUIRE_THAT(percentile_linear(values, q), WithinAbs(expected, 1e-12));
     }
 }
 
-TEST_CASE("percentile_linear rejects invalid input", "[percentile]") {
-    SECTION("empty vector") {
-        REQUIRE_THROWS_AS(percentile_linear({}, 50.0), std::invalid_argument);
-    }
-
-    SECTION("q below range") {
-        REQUIRE_THROWS_AS(percentile_linear({1, 2, 3}, -1.0), std::invalid_argument);
-    }
-
-    SECTION("q above range") {
-        REQUIRE_THROWS_AS(percentile_linear({1, 2, 3}, 101.0), std::invalid_argument);
+std::string toString(SyncType syncType) {
+    if(syncType == SyncType::EXTERNAL) {
+        return "external";
+    } else if(syncType == SyncType::PTP) {
+        return "PTP";
+    } else {
+        throw std::runtime_error("Unknown sync type");
     }
 }
 
@@ -531,38 +471,4 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
     REQUIRE_MSG(p99Delta_us/1e6 < thresholds.deltaP99Threshold, "[FPS=" << targetFps << "] p99 metric does not meet " << thresholds.deltaP99Threshold*1e3 << " ms (" << p99Delta_us/1e3 << " ms)");
 
     return 0;
-}
-
-TEST_CASE("Test Multi-device external frame sync with different FPS values", "[fsync]") {
-    // auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f, 120.0f, 240.0f, 300.0f, 600.0f);
-    auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f);
-    CAPTURE(fps);
-    struct TestThresholds thresholds {
-        .syncThresholdSec = 1/(2*fps), // lower this limit when we have better accuracy for timestamps
-        .testDurationSec = 180,
-        .recvAllTimeoutSec = 10,
-        .initialSyncTimeoutSec = 4,
-        .initialTimeoutSec = 0,
-        .deltaMeanThreshold = 1e-3,
-        .deltaP99Threshold = 2e-3,
-        .syncType = SyncType::EXTERNAL
-    };
-    testFsync(fps, thresholds);
-}
-
-TEST_CASE("Test Multi-device PTP frame sync with different FPS values", "[fsync]") {
-    // auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f, 120.0f, 240.0f, 300.0f, 600.0f);
-    auto fps = GENERATE(10.0f, 13.0f, 18.5f, 30.0f, 60.0f);
-    CAPTURE(fps);
-    struct TestThresholds thresholds {
-        .syncThresholdSec = 1/(2*fps), // lower this limit when we have better accuracy for timestamps
-        .testDurationSec = 180,
-        .recvAllTimeoutSec = 15,
-        .initialSyncTimeoutSec = 60,
-        .initialTimeoutSec = 60,
-        .deltaMeanThreshold = 20e-3,
-        .deltaP99Threshold = 50e-3,
-        .syncType = SyncType::PTP
-    };
-    testFsync(fps, thresholds);
 }
