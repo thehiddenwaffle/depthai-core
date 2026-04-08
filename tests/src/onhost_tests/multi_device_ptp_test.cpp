@@ -13,8 +13,8 @@ TEST_CASE("Test Multi-device PTP frame sync with different FPS values", "[ptp]")
         .recvAllTimeoutSec = 15,
         .initialSyncTimeoutSec = 60,
         .initialTimeoutSec = 60,
-        .deltaMeanThreshold = 20e-3,
-        .deltaP99Threshold = 50e-3,
+        .deltaMeanThreshold = 1e-3,
+        .deltaP99Threshold = 2e-3,
         .syncType = SyncType::PTP
     };
     testFsync(fps, thresholds);
