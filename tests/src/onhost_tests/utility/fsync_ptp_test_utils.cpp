@@ -427,7 +427,7 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
                 auto endTime = std::chrono::steady_clock::now();
                 auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(endTime - initialSyncTime.value()).count();
                 if (elapsedSec >= thresholds.initialTimeoutSec) {
-                    waitingForInitialSync = false;
+                    waitingForInitialTimeout = false;
                 }
             }
 
