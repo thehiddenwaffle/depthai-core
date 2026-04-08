@@ -119,6 +119,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--ptp",
+        action="store_true",
+        required=False,
+    )
+
+    parser.add_argument(
         "--rvc4rgb",
         action="store_true",
         required=False,
@@ -164,6 +170,11 @@ if __name__ == "__main__":
             "labels": ["rvc4fsync"],
         },
         {
+            "name": "RVC4 - PTP",
+            "env": {"DEPTHAI_PLATFORM": "rvc4", "DEPTHAI_PROTOCOL": "tcpip"},
+            "labels": ["rvc4ptp"],
+        },
+        {
             "name": "RVC4 - RGB",
             "env": {"DEPTHAI_PLATFORM": "rvc4", "DEPTHAI_PROTOCOL": "tcpip"},
             "labels": ["rvc4rgb"],
@@ -194,6 +205,8 @@ if __name__ == "__main__":
         test_configs = [config for config in all_configs if "rvc4rgb" in config.get("labels", [])]
     elif args.fsync:
         test_configs = [config for config in all_configs if "rvc4fsync" in config.get("labels", [])]
+    elif args.ptp:
+        test_configs = [config for config in all_configs if "rvc4ptp" in config.get("labels", [])]
 
 
     for config in test_configs:
