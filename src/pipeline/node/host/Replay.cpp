@@ -56,7 +56,7 @@ inline std::shared_ptr<Buffer> getMessage(const std::shared_ptr<google::protobuf
         }
         case DatatypeEnum::IMUData: {
             auto imuData = std::make_shared<IMUData>();
-            utility::setProtoMessage(*imuData, metadata.get(), false);
+            utility::setProtoMessage(*imuData, metadata.get(), true);
             return imuData;
         }
         case DatatypeEnum::PointCloudData: {
