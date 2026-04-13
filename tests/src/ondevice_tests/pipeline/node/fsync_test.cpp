@@ -326,48 +326,48 @@ TEST_CASE("Fsync metadata state selection", "[fsync][metadata]") {
         requireExactlyOneStereoPairedSlave(frames, stereoPairs, requests);
     }
 
-    SECTION("A-A@40 | B-A@30 | C-A@30") {
+    SECTION("A-A@30 | B-A@20 | C-A@20") {
         const std::vector<CameraRequest> requests = {
-            {dai::CameraBoardSocket::CAM_A, 40.0f, dai::CameraControl::FrameSyncMode::AUTO},
-            {dai::CameraBoardSocket::CAM_B, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
-            {dai::CameraBoardSocket::CAM_C, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
+            {dai::CameraBoardSocket::CAM_A, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
+            {dai::CameraBoardSocket::CAM_B, 20.0f, dai::CameraControl::FrameSyncMode::AUTO},
+            {dai::CameraBoardSocket::CAM_C, 20.0f, dai::CameraControl::FrameSyncMode::AUTO},
         };
         auto frames = collectOneFramePerCamera(requests, {dai::CameraBoardSocket::CAM_B, dai::CameraBoardSocket::CAM_C}, stereoPairs, device);
         requireExpectedMetadata(frames,
                                 {
-                                    {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::NONE, 40.0f},
-                                    {dai::CameraBoardSocket::CAM_B, dai::ImgFrame::Fsync::INPUT, 30.0f},
-                                    {dai::CameraBoardSocket::CAM_C, dai::ImgFrame::Fsync::INPUT, 30.0f},
+                                    {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::NONE, 30.0f},
+                                    {dai::CameraBoardSocket::CAM_B, dai::ImgFrame::Fsync::INPUT, 20.0f},
+                                    {dai::CameraBoardSocket::CAM_C, dai::ImgFrame::Fsync::INPUT, 20.0f},
                                 });
     }
 
-    SECTION("A-A@30 | B-A@30 | C-A@40") {
+    SECTION("A-A@20 | B-A@20 | C-A@30") {
         const std::vector<CameraRequest> requests = {
-            {dai::CameraBoardSocket::CAM_A, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
-            {dai::CameraBoardSocket::CAM_B, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
-            {dai::CameraBoardSocket::CAM_C, 40.0f, dai::CameraControl::FrameSyncMode::AUTO},
+            {dai::CameraBoardSocket::CAM_A, 20.0f, dai::CameraControl::FrameSyncMode::AUTO},
+            {dai::CameraBoardSocket::CAM_B, 20.0f, dai::CameraControl::FrameSyncMode::AUTO},
+            {dai::CameraBoardSocket::CAM_C, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
         };
         auto frames = collectOneFramePerCamera(requests, {dai::CameraBoardSocket::CAM_A, dai::CameraBoardSocket::CAM_B}, stereoPairs, device);
         requireExpectedMetadata(frames,
                                 {
-                                    {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::INPUT, 30.0f},
-                                    {dai::CameraBoardSocket::CAM_B, dai::ImgFrame::Fsync::INPUT, 30.0f},
-                                    {dai::CameraBoardSocket::CAM_C, dai::ImgFrame::Fsync::NONE, 40.0f},
+                                    {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::INPUT, 20.0f},
+                                    {dai::CameraBoardSocket::CAM_B, dai::ImgFrame::Fsync::INPUT, 20.0f},
+                                    {dai::CameraBoardSocket::CAM_C, dai::ImgFrame::Fsync::NONE, 30.0f},
                                 });
     }
 
-    SECTION("A-A@30 | B-A@40 | C-A@30") {
+    SECTION("A-A@20 | B-A@30 | C-A@20") {
         const std::vector<CameraRequest> requests = {
-            {dai::CameraBoardSocket::CAM_A, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
-            {dai::CameraBoardSocket::CAM_B, 40.0f, dai::CameraControl::FrameSyncMode::AUTO},
-            {dai::CameraBoardSocket::CAM_C, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
+            {dai::CameraBoardSocket::CAM_A, 20.0f, dai::CameraControl::FrameSyncMode::AUTO},
+            {dai::CameraBoardSocket::CAM_B, 30.0f, dai::CameraControl::FrameSyncMode::AUTO},
+            {dai::CameraBoardSocket::CAM_C, 20.0f, dai::CameraControl::FrameSyncMode::AUTO},
         };
         auto frames = collectOneFramePerCamera(requests, {dai::CameraBoardSocket::CAM_A, dai::CameraBoardSocket::CAM_C}, stereoPairs, device);
         requireExpectedMetadata(frames,
                                 {
-                                    {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::INPUT, 30.0f},
-                                    {dai::CameraBoardSocket::CAM_B, dai::ImgFrame::Fsync::NONE, 40.0f},
-                                    {dai::CameraBoardSocket::CAM_C, dai::ImgFrame::Fsync::INPUT, 30.0f},
+                                    {dai::CameraBoardSocket::CAM_A, dai::ImgFrame::Fsync::INPUT, 20.0f},
+                                    {dai::CameraBoardSocket::CAM_B, dai::ImgFrame::Fsync::NONE, 30.0f},
+                                    {dai::CameraBoardSocket::CAM_C, dai::ImgFrame::Fsync::INPUT, 20.0f},
                                 });
     }
 
