@@ -46,22 +46,22 @@ inline std::shared_ptr<Buffer> getMessage(const std::shared_ptr<google::protobuf
     switch(datatype) {
         case DatatypeEnum::ImgFrame: {
             auto imgFrame = std::make_shared<ImgFrame>();
-            utility::setProtoMessage(*imgFrame, metadata.get(), true);
+            utility::setProtoMessage(*imgFrame, metadata.get(), false);
             return imgFrame;
         }
         case DatatypeEnum::EncodedFrame: {
             auto encFrame = std::make_shared<EncodedFrame>();
-            utility::setProtoMessage(*encFrame, metadata.get(), true);
+            utility::setProtoMessage(*encFrame, metadata.get(), false);
             return encFrame;
         }
         case DatatypeEnum::IMUData: {
             auto imuData = std::make_shared<IMUData>();
-            utility::setProtoMessage(*imuData, metadata.get(), true);
+            utility::setProtoMessage(*imuData, metadata.get(), false);
             return imuData;
         }
         case DatatypeEnum::PointCloudData: {
             auto pclData = std::make_shared<PointCloudData>();
-            utility::setProtoMessage(*pclData, metadata.get(), true);
+            utility::setProtoMessage(*pclData, metadata.get(), false);
             return pclData;
         }
         case DatatypeEnum::ADatatype:
