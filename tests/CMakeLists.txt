@@ -684,7 +684,7 @@ dai_set_test_labels(multi_device_fsync_test ondevice rvc4fsync ci)
 dai_add_test(multi_device_ptp_test src/onhost_tests/multi_device_ptp_test.cpp)
 target_include_directories(multi_device_ptp_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include)
 target_sources(multi_device_ptp_test PRIVATE src/onhost_tests/utility/fsync_ptp_test_utils.cpp)
-dai_set_test_labels(multi_device_ptp_test ondevice rvc4fsync ci)
+dai_set_test_labels(multi_device_ptp_test ondevice rvc4ptp ci)
 
 ## Large messages tests
 dai_add_test(bridge_large_messages src/ondevice_tests/bridge_large_messages.cpp)
