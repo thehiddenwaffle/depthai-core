@@ -16,3 +16,5 @@ source venv/bin/activate
 pip install hil-framework --upgrade --no-cache-dir \
   --index-url "https://__token__:$PAT_TOKEN@gitlab.luxonis.com/api/v4/projects/213/packages/pypi/simple" \
   > /dev/null 2>&1
+
+pip install adbutils==2.12.0
