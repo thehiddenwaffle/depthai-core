@@ -248,9 +248,9 @@ if(DEPTHAI_FETCH_ARTIFACTS)
     )
 
     private_data(
-        URL "https://artifacts.luxonis.com/artifactory/luxonis-depthai-data-local/misc/holistic_recording.tar"
-        SHA1 "1eb1e6b927fbf52d4f9c13e530697503010c5b96"
-        FILE "holistic_recording.tar"
+        URL "https://artifacts.luxonis.com/artifactory/luxonis-depthai-data-local/misc/holistic_recording_transformations.tar"
+        SHA1 "be6ef1f24a26d8e604283a6dac59ede035425feb"
+        FILE "holistic_recording_transformations.tar"
         LOCATION holistic_recording
     )
 
