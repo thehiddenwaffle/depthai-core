@@ -720,7 +720,17 @@ void CommonBindings::bind(pybind11::module& m, void* pCallstack) {
     profilingData.def_readwrite("numBytesWritten", &ProfilingData::numBytesWritten, DOC(dai, ProfilingData, numBytesWritten))
         .def_readwrite("numBytesRead", &ProfilingData::numBytesRead, DOC(dai, ProfilingData, numBytesRead));
 
-    deviceModelZoo.value("NEURAL_DEPTH_EXTRA_LARGE", DeviceModelZoo::NEURAL_DEPTH_EXTRA_LARGE)
+    deviceModelZoo.value("NEURAL_1248X780", DeviceModelZoo::NEURAL_1248X780)
+        .value("NEURAL_1056X660", DeviceModelZoo::NEURAL_1056X660)
+        .value("NEURAL_960X600", DeviceModelZoo::NEURAL_960X600)
+        .value("NEURAL_864X540", DeviceModelZoo::NEURAL_864X540)
+        .value("NEURAL_768X480", DeviceModelZoo::NEURAL_768X480)
+        .value("NEURAL_576X360", DeviceModelZoo::NEURAL_576X360)
+        .value("NEURAL_480X300", DeviceModelZoo::NEURAL_480X300)
+        .value("NEURAL_384X240", DeviceModelZoo::NEURAL_384X240)
+        .value("NEURAL_288X180", DeviceModelZoo::NEURAL_288X180)
+        .value("NEURAL_192X120", DeviceModelZoo::NEURAL_192X120)
+        .value("NEURAL_DEPTH_EXTRA_LARGE", DeviceModelZoo::NEURAL_DEPTH_EXTRA_LARGE)
         .value("NEURAL_DEPTH_LARGE", DeviceModelZoo::NEURAL_DEPTH_LARGE)
         .value("NEURAL_DEPTH_MEDIUM", DeviceModelZoo::NEURAL_DEPTH_MEDIUM)
         .value("NEURAL_DEPTH_SMALL", DeviceModelZoo::NEURAL_DEPTH_SMALL)
