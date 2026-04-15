@@ -81,6 +81,30 @@ namespace {
         using Catch::Matchers::WithinAbs;
         REQUIRE_THAT(percentile_linear(values, q), WithinAbs(expected, 1e-12));
     }
+
+    std::string toString(dai::ImgFrame::Fsync fsync) {
+        switch(fsync) {
+            case dai::ImgFrame::Fsync::NONE:
+                return "NONE";
+            case dai::ImgFrame::Fsync::INPUT:
+                return "INPUT";
+            case dai::ImgFrame::Fsync::OUTPUT:
+                return "OUTPUT";
+            case dai::ImgFrame::Fsync::PTP:
+                return "PTP";
+        }
+        return "UNKNOWN";
+    }
+
+    dai::ImgFrame::Fsync convertSyncType(SyncType syncType) {
+        if(syncType == SyncType::EXTERNAL) {
+            return dai::ImgFrame::Fsync::INPUT;
+        } else if(syncType == SyncType::PTP) {
+            return dai::ImgFrame::Fsync::PTP;
+        } else {
+            throw std::runtime_error("Unknown sync type");
+        }
+    }
 }
 
 std::string toString(SyncType syncType) {
@@ -410,6 +434,8 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
             for(auto name : outputNames) {
                 auto frame = latestFrameGroup.value()->get<dai::ImgFrame>(name);
                 REQUIRE_MSG(frame != nullptr, "Frame pointer is null");
+                REQUIRE_MSG(frame->getFsync() == convertSyncType(thresholds.syncType),
+                    "Frame sync type doesn't match: expected " << toString(convertSyncType(thresholds.syncType)) << ", got " << toString(frame->getFsync()));
                 tsValues.emplace(name, frame->getTimestamp(dai::CameraExposureOffset::END));
             }
 
