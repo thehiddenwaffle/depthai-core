@@ -1513,7 +1513,7 @@ bool DeviceBase::isNeuralDepthSupported() {
 }
 
 std::vector<DeviceModelZoo> DeviceBase::getSupportedDeviceModels() {
-    return pimpl->rpcCall("getSupportedDeviceModels").as<std::vector<DeviceModelZoo>>();
+    return pimpl->rpcCallChecked<std::vector<DeviceModelZoo>>("getSupportedDeviceModels");
 }
 
 std::optional<Version> DeviceBase::getBootloaderVersion() {
