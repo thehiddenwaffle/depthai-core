@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <optional>
 #include <queue>
+#include <utility>
 #include <variant>
 
 #include "depthai/schemas/PointCloudData.pb.h"
@@ -961,7 +962,7 @@ void setProtoMessage(ImgFrame& obj, const google::protobuf::Message* msg, bool m
 
     obj.transformation = deserializeImgTransformation(imgFrame->transformation());
 
-    if(!metadataOnly) {
+    if(!metadataOnly && !imgFrame->data().empty() && imgFrame->data().data() != nullptr) {
         std::vector<uint8_t> data(imgFrame->data().begin(), imgFrame->data().end());
         obj.setData(data);
     }
@@ -1002,7 +1003,7 @@ static void populateEncodedFrameFromProto(EncodedFrame& obj, const proto::encode
 
     obj.transformation = deserializeImgTransformation(encFrame.transformation());
 
-    if(!metadataOnly) {
+    if(!metadataOnly && !encFrame.data().empty() && encFrame.data().data() != nullptr) {
         std::vector<uint8_t> data(encFrame.data().begin(), encFrame.data().end());
         obj.setData(data);
     }
@@ -1046,7 +1047,7 @@ void setProtoMessage(PointCloudData& obj, const google::protobuf::Message* msg, 
     obj.setSparse(pcl->sparse());
     obj.setColor(pcl->color());
 
-    if(!metadataOnly) {
+    if(!metadataOnly && !pcl->data().empty() && pcl->data().data() != nullptr) {
         std::vector<uint8_t> data(pcl->data().begin(), pcl->data().end());
         obj.setData(data);
     }

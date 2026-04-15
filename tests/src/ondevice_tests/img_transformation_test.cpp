@@ -34,6 +34,11 @@
 #include "depthai/utility/Compression.hpp"
 #include "pipeline/utilities/Alignment/AlignmentUtilities.hpp"
 
+// Disable container overflow detection for this test binary (false positive from protobuf)
+extern "C" const char* __asan_default_options() {
+    return "detect_container_overflow=0";
+}
+
 bool isIdentity(const std::array<std::array<float, 3>, 3>& mat) {
     for(int i = 0; i < 3; i++) {
         for(int j = 0; j < 3; j++) {
