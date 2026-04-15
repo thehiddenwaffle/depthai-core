@@ -325,8 +325,7 @@ class DeviceBase::Impl {
 
     template <typename Ret, typename... Args>
     Ret rpcCallChecked(std::chrono::milliseconds timeout, std::string name, Args&&... args) {
-        auto [ok, err, value] =
-            rpcCall(timeout, name, std::forward<Args>(args)...).template as<std::tuple<bool, std::string, Ret>>();
+        auto [ok, err, value] = rpcCall(timeout, name, std::forward<Args>(args)...).template as<std::tuple<bool, std::string, Ret>>();
         if(!ok) {
             throw std::runtime_error(fmt::format("RPC '{}' failed: {}", name, err));
         }
