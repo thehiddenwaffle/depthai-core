@@ -1,5 +1,5 @@
-#include <array>
 #include <algorithm>
+#include <array>
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -15,16 +15,16 @@ extern "C" const char* __asan_default_options() {
 
 namespace {
 constexpr std::array<dai::DeviceModelZoo, 10> kNeuralDepthModels = {
-    dai::DeviceModelZoo::NEURAL_1248X780,
-    dai::DeviceModelZoo::NEURAL_1056X660,
-    dai::DeviceModelZoo::NEURAL_960X600,
-    dai::DeviceModelZoo::NEURAL_864X540,
-    dai::DeviceModelZoo::NEURAL_768X480,
-    dai::DeviceModelZoo::NEURAL_576X360,
-    dai::DeviceModelZoo::NEURAL_480X300,
-    dai::DeviceModelZoo::NEURAL_384X240,
-    dai::DeviceModelZoo::NEURAL_288X180,
-    dai::DeviceModelZoo::NEURAL_192X120,
+    dai::DeviceModelZoo::NEURAL_DEPTH_1248X780,
+    dai::DeviceModelZoo::NEURAL_DEPTH_1056X660,
+    dai::DeviceModelZoo::NEURAL_DEPTH_960X600,
+    dai::DeviceModelZoo::NEURAL_DEPTH_864X540,
+    dai::DeviceModelZoo::NEURAL_DEPTH_768X480,
+    dai::DeviceModelZoo::NEURAL_DEPTH_576X360,
+    dai::DeviceModelZoo::NEURAL_DEPTH_480X300,
+    dai::DeviceModelZoo::NEURAL_DEPTH_384X240,
+    dai::DeviceModelZoo::NEURAL_DEPTH_288X180,
+    dai::DeviceModelZoo::NEURAL_DEPTH_192X120,
 };
 
 struct LiveCameraTestCase {
@@ -33,16 +33,16 @@ struct LiveCameraTestCase {
 };
 
 constexpr std::array<LiveCameraTestCase, kNeuralDepthModels.size()> kLiveCameraTestCases = {{
-    {dai::DeviceModelZoo::NEURAL_1248X780, 1.6f},
-    {dai::DeviceModelZoo::NEURAL_1056X660, 3.0f},
-    {dai::DeviceModelZoo::NEURAL_960X600, 5.0f},
-    {dai::DeviceModelZoo::NEURAL_864X540, 8.0f},
-    {dai::DeviceModelZoo::NEURAL_768X480, 10.0f},
-    {dai::DeviceModelZoo::NEURAL_576X360, 24.0f},
-    {dai::DeviceModelZoo::NEURAL_480X300, 40.0f},
-    {dai::DeviceModelZoo::NEURAL_384X240, 55.0f},
-    {dai::DeviceModelZoo::NEURAL_288X180, 55.0f},
-    {dai::DeviceModelZoo::NEURAL_192X120, 55.0f},
+    {dai::DeviceModelZoo::NEURAL_DEPTH_1248X780, 1.6f},
+    {dai::DeviceModelZoo::NEURAL_DEPTH_1056X660, 3.0f},
+    {dai::DeviceModelZoo::NEURAL_DEPTH_960X600, 5.0f},
+    {dai::DeviceModelZoo::NEURAL_DEPTH_864X540, 8.0f},
+    {dai::DeviceModelZoo::NEURAL_DEPTH_768X480, 10.0f},
+    {dai::DeviceModelZoo::NEURAL_DEPTH_576X360, 24.0f},
+    {dai::DeviceModelZoo::NEURAL_DEPTH_480X300, 40.0f},
+    {dai::DeviceModelZoo::NEURAL_DEPTH_384X240, 55.0f},
+    {dai::DeviceModelZoo::NEURAL_DEPTH_288X180, 55.0f},
+    {dai::DeviceModelZoo::NEURAL_DEPTH_192X120, 55.0f},
 }};
 
 bool isModelSupported(const std::shared_ptr<dai::DeviceBase>& device, dai::DeviceModelZoo model) {
