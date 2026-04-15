@@ -640,6 +640,9 @@ static void populateEncodedFrameToProto(proto::encoded_frame::EncodedFrame* enco
     cam->set_lensposition(message->cam.lensPosition);        // lensPosition -> lensposition
     cam->set_wbcolortemp(message->cam.wbColorTemp);          // wbColorTemp -> wbcolortemp
     cam->set_lenspositionraw(message->cam.lensPositionRaw);  // lensPositionRaw -> lenspositionraw
+    cam->set_fsync(static_cast<proto::common::CameraFsync>(message->cam.fsync));
+    cam->set_sensormode(message->cam.sensorMode);
+    cam->set_fps(message->cam.fps);
 
     if(!metadataOnly) {
         // Set the encoded message data
@@ -697,6 +700,9 @@ static void populateImgFrameToProto(proto::img_frame::ImgFrame* imgFrame, const 
     cam->set_lensposition(message->cam.lensPosition);
     cam->set_wbcolortemp(message->cam.wbColorTemp);
     cam->set_lenspositionraw(message->cam.lensPositionRaw);
+    cam->set_fsync(static_cast<proto::common::CameraFsync>(message->cam.fsync));
+    cam->set_sensormode(message->cam.sensorMode);
+    cam->set_fps(message->cam.fps);
 
     // instance number and category
     imgFrame->set_instancenum(message->instanceNum);
@@ -955,6 +961,9 @@ void setProtoMessage(ImgFrame& obj, const google::protobuf::Message* msg, bool m
     obj.cam.lensPosition = imgFrame->cam().lensposition();
     obj.cam.wbColorTemp = imgFrame->cam().wbcolortemp();
     obj.cam.lensPositionRaw = imgFrame->cam().lenspositionraw();
+    obj.cam.fsync = static_cast<ImgFrame::Fsync>(imgFrame->cam().fsync());
+    obj.cam.sensorMode = imgFrame->cam().sensormode();
+    obj.cam.fps = imgFrame->cam().fps();
 
     obj.instanceNum = imgFrame->instancenum();
 
@@ -1000,6 +1009,9 @@ static void populateEncodedFrameFromProto(EncodedFrame& obj, const proto::encode
     obj.cam.lensPosition = encFrame.cam().lensposition();
     obj.cam.wbColorTemp = encFrame.cam().wbcolortemp();
     obj.cam.lensPositionRaw = encFrame.cam().lenspositionraw();
+    obj.cam.fsync = static_cast<ImgFrame::Fsync>(encFrame.cam().fsync());
+    obj.cam.sensorMode = encFrame.cam().sensormode();
+    obj.cam.fps = encFrame.cam().fps();
 
     obj.transformation = deserializeImgTransformation(encFrame.transformation());
 
@@ -1086,6 +1098,9 @@ static void populateImgFrameFromProto(ImgFrame& obj, const proto::img_frame::Img
     obj.cam.lensPosition = imgFrame.cam().lensposition();
     obj.cam.wbColorTemp = imgFrame.cam().wbcolortemp();
     obj.cam.lensPositionRaw = imgFrame.cam().lenspositionraw();
+    obj.cam.fsync = static_cast<ImgFrame::Fsync>(imgFrame.cam().fsync());
+    obj.cam.sensorMode = imgFrame.cam().sensormode();
+    obj.cam.fps = imgFrame.cam().fps();
 
     // instance number and category
     obj.instanceNum = imgFrame.instancenum();
