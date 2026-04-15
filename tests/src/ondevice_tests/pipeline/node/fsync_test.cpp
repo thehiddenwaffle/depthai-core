@@ -59,6 +59,8 @@ std::string toString(dai::ImgFrame::Fsync fsync) {
             return "INPUT";
         case dai::ImgFrame::Fsync::OUTPUT:
             return "OUTPUT";
+        case dai::ImgFrame::Fsync::PTP:
+            return "PTP";
     }
     return "UNKNOWN";
 }
