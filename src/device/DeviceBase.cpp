@@ -81,6 +81,10 @@ std::optional<std::chrono::milliseconds> currentRpcTimeout() {
     return ScopedRpcTimeout::tlRpcTimeout;
 }
 
+bool isDebuggerEnabled() {
+    return dai::utility::getEnvAs<bool>("DEPTHAI_DEBUGGER", false);
+}
+
 }  // namespace
 
 namespace dai {
@@ -609,6 +613,10 @@ unsigned int getRPCReadTimeout() {
         return static_cast<unsigned int>(currentTimeout->count());
     }
 
+    if(!utility::isEnvSet("DEPTHAI_RPC_READ_TIMEOUT") && isDebuggerEnabled()) {
+        return 0;
+    }
+
     return utility::getEnvAs<unsigned int>("DEPTHAI_RPC_READ_TIMEOUT", DEFAULT_RPC_READ_TIMEOUT);
 }
 
@@ -849,6 +857,9 @@ void DeviceBase::init2(Config cfg, const std::filesystem::path& pathToMvcmd, boo
         watchdogTimeout = device::XLINK_TCP_WATCHDOG_TIMEOUT;
     }
     auto watchdogMsStr = utility::getEnvAs<std::string>("DEPTHAI_WATCHDOG", "");
+    if(watchdogMsStr.empty() && isDebuggerEnabled()) {
+        watchdogMsStr = "0";
+    }
     if(!watchdogMsStr.empty()) {
         // Try parsing the string as a number
         try {
