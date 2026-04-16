@@ -23,7 +23,7 @@ enum class SyncType {
 
 std::string toString(SyncType syncType);
 
-struct TestThresholds {
+struct FsyncTestParameters {
     double syncThresholdSec;
     uint64_t testDurationSec;
     int recvAllTimeoutSec;
@@ -70,4 +70,4 @@ void setupDevice(dai::DeviceInfo& deviceInfo,
                  float targetFps,
                  SyncType syncType);
 
-int testFsync(float targetFps, struct TestThresholds thresholds);
+int testFsync(float targetFps, struct FsyncTestParameters parameters);

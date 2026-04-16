@@ -307,14 +307,14 @@ void setupDevice(dai::DeviceInfo& deviceInfo,
     }
 }
 
-int testFsync(float targetFps, struct TestThresholds thresholds) {
+int testFsync(float targetFps, struct FsyncTestParameters parameters) {
 
     std::cout << "=================================\x1B[1;32mTest started\x1B[0m================================" << std::endl;
-    std::cout << "Sync type: " << toString(thresholds.syncType) << std::endl;
+    std::cout << "Sync type: " << toString(parameters.syncType) << std::endl;
     std::cout << "FPS: " << targetFps << std::endl;
-    std::cout << "SYNC_THRESHOLD_SEC: " << thresholds.syncThresholdSec << std::endl;
-    std::cout << "RECV_ALL_TIMEOUT_SEC: " << thresholds.recvAllTimeoutSec << std::endl;
-    std::cout << "INITIAL_SYNC_TIMEOUT_SEC: " << thresholds.initialSyncTimeoutSec << std::endl;
+    std::cout << "SYNC_THRESHOLD_SEC: " << parameters.syncThresholdSec << std::endl;
+    std::cout << "RECV_ALL_TIMEOUT_SEC: " << parameters.recvAllTimeoutSec << std::endl;
+    std::cout << "INITIAL_SYNC_TIMEOUT_SEC: " << parameters.initialSyncTimeoutSec << std::endl;
     std::vector<dai::DeviceInfo> deviceInfos = dai::Device::getAllAvailableDevices();
 
     REQUIRE_MSG(deviceInfos.size() >= 2, "At least two devices are required for this test.");
@@ -331,7 +331,7 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
     std::vector<std::string> camSockets;
 
     for(auto deviceInfo : deviceInfos) {
-        setupDevice(deviceInfo, masterPipeline, masterNode, masterName, slavePipelines, slaveQueues, camSockets, targetFps, thresholds.syncType);
+        setupDevice(deviceInfo, masterPipeline, masterNode, masterName, slavePipelines, slaveQueues, camSockets, targetFps, parameters.syncType);
     }
 
     if(masterPipeline == nullptr || !masterNode.has_value() || !masterName.has_value()) {
@@ -361,7 +361,7 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
 
     bool waitingForInitialSync = true;
     bool waitingForInitialTimeout = true;
-    if (thresholds.initialTimeoutSec == 0) {
+    if (parameters.initialTimeoutSec == 0) {
         waitingForInitialTimeout = false;
     }
     std::atomic_bool running{true};
@@ -414,12 +414,12 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
         if(!firstReceived) {
             auto endTime = std::chrono::steady_clock::now();
             auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime).count();
-            REQUIRE_MSG(elapsedSec < thresholds.recvAllTimeoutSec, "Timeout: Didn't receive all frames in time");
+            REQUIRE_MSG(elapsedSec < parameters.recvAllTimeoutSec, "Timeout: Didn't receive all frames in time");
         }
 
         auto totalElapsedSec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - startTime).count();
 
-        if(totalElapsedSec >= thresholds.testDurationSec) {
+        if(totalElapsedSec >= parameters.testDurationSec) {
             std::cout << "Timeout: Test finished after " << totalElapsedSec << " sec" << std::endl;
             running.store(false);
             break;
@@ -434,8 +434,8 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
             for(auto name : outputNames) {
                 auto frame = latestFrameGroup.value()->get<dai::ImgFrame>(name);
                 REQUIRE_MSG(frame != nullptr, "Frame pointer is null");
-                REQUIRE_MSG(frame->getFsync() == convertSyncType(thresholds.syncType),
-                    "Frame sync type doesn't match: expected " << toString(convertSyncType(thresholds.syncType)) << ", got " << toString(frame->getFsync()));
+                REQUIRE_MSG(frame->getFsync() == convertSyncType(parameters.syncType),
+                    "Frame sync type doesn't match: expected " << toString(convertSyncType(parameters.syncType)) << ", got " << toString(frame->getFsync()));
                 tsValues.emplace(name, frame->getTimestamp(dai::CameraExposureOffset::END));
             }
 
@@ -447,12 +447,12 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
             auto delta = maxElement->second - minElement->second;
             auto deltaUs = std::chrono::duration_cast<std::chrono::microseconds>(delta).count();
 
-            bool syncStatus = abs(deltaUs) < thresholds.syncThresholdSec * 1e6;
+            bool syncStatus = abs(deltaUs) < parameters.syncThresholdSec * 1e6;
 
             if (waitingForInitialTimeout) {
                 auto endTime = std::chrono::steady_clock::now();
                 auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(endTime - initialSyncTime.value()).count();
-                if (elapsedSec >= thresholds.initialTimeoutSec) {
+                if (elapsedSec >= parameters.initialTimeoutSec) {
                     waitingForInitialTimeout = false;
                 }
             }
@@ -464,7 +464,7 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
             if(!syncStatus && waitingForInitialSync) {
                 auto endTime = std::chrono::steady_clock::now();
                 auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(endTime - initialSyncTime.value()).count();
-                REQUIRE_MSG(elapsedSec < thresholds.initialSyncTimeoutSec, "Timeout: Didn't sync frames in time");
+                REQUIRE_MSG(elapsedSec < parameters.initialSyncTimeoutSec, "Timeout: Didn't sync frames in time");
             }
 
             if(syncStatus && waitingForInitialSync) {
@@ -493,8 +493,8 @@ int testFsync(float targetFps, struct TestThresholds thresholds) {
     std::cout << "   [FPS=" << targetFps << "] p99 frame delta: " << p99Delta_us/1e3 << " ms" << std::endl;
     std::cout << "   [FPS=" << targetFps << "] Max outlier frame delta: " << maxDelta_us/1e3 << " ms" << std::endl;
 
-    REQUIRE_MSG(meanDelta_us/1e6 < thresholds.deltaMeanThreshold, "[FPS=" << targetFps << "] Mean value of frame deltas above " << thresholds.deltaMeanThreshold*1e3 << " ms (" << meanDelta_us/1e3 << " ms)");
-    REQUIRE_MSG(p99Delta_us/1e6 < thresholds.deltaP99Threshold, "[FPS=" << targetFps << "] p99 metric does not meet " << thresholds.deltaP99Threshold*1e3 << " ms (" << p99Delta_us/1e3 << " ms)");
+    REQUIRE_MSG(meanDelta_us/1e6 < parameters.deltaMeanThreshold, "[FPS=" << targetFps << "] Mean value of frame deltas above " << parameters.deltaMeanThreshold*1e3 << " ms (" << meanDelta_us/1e3 << " ms)");
+    REQUIRE_MSG(p99Delta_us/1e6 < parameters.deltaP99Threshold, "[FPS=" << targetFps << "] p99 metric does not meet " << parameters.deltaP99Threshold*1e3 << " ms (" << p99Delta_us/1e3 << " ms)");
 
     return 0;
 }
