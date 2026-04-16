@@ -1,9 +1,15 @@
 #include "depthai/pipeline/node/PointCloud.hpp"
 
+#include <spdlog/logger.h>
+
 #include <chrono>
 #include <cstring>
 #include <future>
 #include <thread>
+
+#ifdef DEPTHAI_ENABLE_KOMPUTE
+    #include "kompute/Kompute.hpp"
+#endif
 
 #include "depthai/common/DepthUnit.hpp"
 #include "depthai/common/Extrinsics.hpp"
@@ -27,7 +33,7 @@ namespace node {
 
 // ── Impl: apply / get methods ──
 
-void PointCloud::Impl::setLogger(std::shared_ptr<spdlog::logger> log) {
+void PointCloud::Impl::setLogger(std::shared_ptr<::spdlog::logger> log) {
     logger = log;
 }
 

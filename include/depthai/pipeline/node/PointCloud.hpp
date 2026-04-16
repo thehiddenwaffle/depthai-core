@@ -1,11 +1,6 @@
 #pragma once
 
 #include <depthai/pipeline/DeviceNode.hpp>
-
-// shared
-#include <spdlog/logger.h>
-#include <spdlog/spdlog.h>
-
 #include <depthai/properties/PointCloudProperties.hpp>
 #include <memory>
 #include <optional>
@@ -22,6 +17,10 @@
 #include "depthai/pipeline/datatype/StereoDepthConfig.hpp"
 #include "depthai/pipeline/node/Sync.hpp"
 #include "depthai/utility/Pimpl.hpp"
+
+namespace spdlog {
+class logger;
+}  // namespace spdlog
 
 #ifdef DEPTHAI_ENABLE_KOMPUTE
     #include "kompute/Kompute.hpp"
@@ -41,7 +40,7 @@ class PointCloud : public DeviceNodeCRTP<DeviceNode, PointCloud, PointCloudPrope
        public:
         Impl() = default;
 
-        void setLogger(std::shared_ptr<spdlog::logger> log);
+        void setLogger(std::shared_ptr<::spdlog::logger> log);
 
         // Compute DENSE point cloud (width * height points, includes invalid z=0 or negative)
         void computePointCloudDense(const uint8_t* depthData, std::vector<Point3f>& points);
@@ -110,7 +109,7 @@ class PointCloud : public DeviceNodeCRTP<DeviceNode, PointCloud, PointCloudPrope
         std::vector<std::vector<float>> extrinsics;
         bool hasExtrinsics = false;
 
-        std::shared_ptr<spdlog::logger> logger;
+        std::shared_ptr<::spdlog::logger> logger;
     };
 
    protected:
