@@ -5,7 +5,6 @@ import argparse
 from functools import reduce
 import pathlib
 import atexit
-from adbutils import adb
 
 class ResultThread(threading.Thread):
 
@@ -44,6 +43,7 @@ class ResultThread(threading.Thread):
         self.result = process
 
 def enableUARTonAllDevices(enable):
+    from adbutils import adb
     regs = ["0x0F11A000", "0x0F11B000"]
 
     enableValue = "0x00000204"
