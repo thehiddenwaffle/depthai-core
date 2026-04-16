@@ -72,7 +72,8 @@ class PointCloud : public DeviceNodeCRTP<DeviceNode, PointCloud, PointCloudPrope
         template <typename PointT>
         void transformPointsCPU(std::vector<PointT>& points);
         void calcPointsChunkDense(const uint8_t* depthData, std::vector<Point3f>& points, unsigned int startRow, unsigned int endRow);
-        void calcPointsChunkDenseColored(const uint8_t* depthData, const uint8_t* colorData, std::vector<Point3fRGBA>& points, unsigned int startRow, unsigned int endRow);
+        void calcPointsChunkDenseColored(
+            const uint8_t* depthData, const uint8_t* colorData, std::vector<Point3fRGBA>& points, unsigned int startRow, unsigned int endRow);
         void computePointCloudDenseCPU(const uint8_t* depthData, std::vector<Point3f>& points);
         void computePointCloudDenseCPUMT(const uint8_t* depthData, std::vector<Point3f>& points);
         void computePointCloudDenseGPU(const uint8_t* depthData, std::vector<Point3f>& points);
