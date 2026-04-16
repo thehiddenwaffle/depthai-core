@@ -69,7 +69,9 @@ void bind_stereodepthconfig(pybind11::module& m, void* pCallstack) {
         .value("RECTIFIED_LEFT",
                StereoDepthConfig::AlgorithmControl::DepthAlign::RECTIFIED_LEFT,
                DOC(dai, StereoDepthConfig, AlgorithmControl, DepthAlign, RECTIFIED_LEFT))
-        .value("CENTER", StereoDepthConfig::AlgorithmControl::DepthAlign::CENTER, DOC(dai, StereoDepthConfig, AlgorithmControl, DepthAlign, CENTER));
+        .value("CENTER", StereoDepthConfig::AlgorithmControl::DepthAlign::CENTER, DOC(dai, StereoDepthConfig, AlgorithmControl, DepthAlign, CENTER))
+        .value("RIGHT", StereoDepthConfig::AlgorithmControl::DepthAlign::RIGHT)
+        .value("LEFT", StereoDepthConfig::AlgorithmControl::DepthAlign::LEFT);
 
     // m.attr("StereoDepthProperties").attr("DepthAlign") = depthAlign;
 
