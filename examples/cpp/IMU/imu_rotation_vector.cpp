@@ -13,8 +13,8 @@
 
 namespace {
 
-constexpr double WINDOW_SECONDS = 10.0;
-constexpr double PRINT_UPDATE_HZ = 4.0;
+constexpr double windowSeconds = 10.0;
+constexpr double printUpdateHz = 4.0;
 constexpr double kPi = 3.14159265358979323846;
 
 const std::vector<std::vector<float>> kYZSwapRotation = {
@@ -143,16 +143,16 @@ int main() {
                                rotationVector.real,
                                rotationVector.rotationVectorAccuracy});
 
-            while(!samples.empty() && sampleSeconds - samples.front().seconds > WINDOW_SECONDS) {
+            while(!samples.empty() && sampleSeconds - samples.front().seconds > windowSeconds) {
                 samples.pop_front();
             }
         }
 
         const auto now = std::chrono::steady_clock::now();
-        if(!samples.empty() && std::chrono::duration<double>(now - lastPrintTime).count() >= 1.0 / PRINT_UPDATE_HZ) {
+        if(!samples.empty() && std::chrono::duration<double>(now - lastPrintTime).count() >= 1.0 / printUpdateHz) {
             const auto& latest = samples.back();
             const auto spans = windowSpans(samples);
-            std::cout << "Window " << std::setw(4) << WINDOW_SECONDS << "s span [deg]: x=" << std::setw(8) << spans[0] << " y=" << std::setw(8)
+            std::cout << "Window " << std::setw(4) << windowSeconds << "s span [deg]: x=" << std::setw(8) << spans[0] << " y=" << std::setw(8)
                       << spans[1] << " z=" << std::setw(8) << spans[2] << " | latest xyz=[" << std::setw(8) << latest.x << ", " << std::setw(8)
                       << latest.y << ", " << std::setw(8) << latest.z << "] quat=[" << std::setw(9) << latest.i << ", " << std::setw(9)
                       << latest.j << ", " << std::setw(9) << latest.k << ", " << std::setw(9) << latest.real << "] acc=" << latest.accuracy

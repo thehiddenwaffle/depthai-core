@@ -6,65 +6,65 @@ import time
 import depthai as dai
 
 
-WINDOW_SECONDS = 10.0
-PRINT_UPDATE_HZ = 4.0
-YZ_SWAP_ROTATION = [
+windowSeconds = 10.0
+printUpdateHz = 4.0
+yzSwapRotation = [
     [0.0, 1.0, 0.0],
     [1.0, 0.0, 0.0],
     [0.0, 0.0, 1.0],
 ]
 
 
-def quaternion_to_euler_xyz(i: float, j: float, k: float, real: float) -> tuple[float, float, float]:
-    sinr_cosp = 2.0 * (real * i + j * k)
-    cosr_cosp = 1.0 - 2.0 * (i * i + j * j)
-    x = math.degrees(math.atan2(sinr_cosp, cosr_cosp))
+def quaternionToEulerXYZ(i: float, j: float, k: float, real: float) -> tuple[float, float, float]:
+    sinrCosp = 2.0 * (real * i + j * k)
+    cosrCosp = 1.0 - 2.0 * (i * i + j * j)
+    x = math.degrees(math.atan2(sinrCosp, cosrCosp))
 
     sinp = 2.0 * (real * j - k * i)
     sinp = max(-1.0, min(1.0, sinp))
     y = math.degrees(math.asin(sinp))
 
-    siny_cosp = 2.0 * (real * k + i * j)
-    cosy_cosp = 1.0 - 2.0 * (j * j + k * k)
-    z = math.degrees(math.atan2(siny_cosp, cosy_cosp))
+    sinyCosp = 2.0 * (real * k + i * j)
+    cosyCosp = 1.0 - 2.0 * (j * j + k * k)
+    z = math.degrees(math.atan2(sinyCosp, cosyCosp))
 
     return x, y, z
 
 
-def resolve_imu_extrinsics_destination(eeprom_data: dai.EepromData) -> dai.CameraBoardSocket:
-    socket = eeprom_data.imuExtrinsics.toCameraSocket
+def resolveImuExtrinsicsDestination(eepromData: dai.EepromData) -> dai.CameraBoardSocket:
+    socket = eepromData.imuExtrinsics.toCameraSocket
     if socket != dai.CameraBoardSocket.AUTO:
         return socket
 
-    if dai.CameraBoardSocket.CAM_A in eeprom_data.cameraData:
+    if dai.CameraBoardSocket.CAM_A in eepromData.cameraData:
         return dai.CameraBoardSocket.CAM_A
 
-    if eeprom_data.cameraData:
-        return next(iter(eeprom_data.cameraData))
+    if eepromData.cameraData:
+        return next(iter(eepromData.cameraData))
 
     return dai.CameraBoardSocket.CAM_A
 
 
-def rotation_vector_supported(device: dai.Device) -> bool:
+def rotationVectorSupported(device: dai.Device) -> bool:
     return device.getConnectedIMU() != "BMI270"
 
 
-def window_spans(samples: deque[tuple[float, float, float, float, float, float, float, float, float]]) -> tuple[float, float, float]:
-    x_values = [sample[1] for sample in samples]
-    y_values = [sample[2] for sample in samples]
-    z_values = [sample[3] for sample in samples]
+def windowSpans(samples: deque[tuple[float, float, float, float, float, float, float, float, float]]) -> tuple[float, float, float]:
+    xValues = [sample[1] for sample in samples]
+    yValues = [sample[2] for sample in samples]
+    zValues = [sample[3] for sample in samples]
     return (
-        max(x_values) - min(x_values),
-        max(y_values) - min(y_values),
-        max(z_values) - min(z_values),
+        max(xValues) - min(xValues),
+        max(yValues) - min(yValues),
+        max(zValues) - min(zValues),
     )
 
 
 with dai.Pipeline() as pipeline:
     device = pipeline.getDefaultDevice()
-    imu_name = device.getConnectedIMU()
-    if not rotation_vector_supported(device):
-        print(f"Skipping example: connected IMU {imu_name} does not support ROTATION_VECTOR.")
+    imuName = device.getConnectedIMU()
+    if not rotationVectorSupported(device):
+        print(f"Skipping example: connected IMU {imuName} does not support ROTATION_VECTOR.")
         raise SystemExit(0)
 
     # Define sources and outputs
@@ -82,24 +82,24 @@ with dai.Pipeline() as pipeline:
 
     imuQueue = imu.out.createOutputQueue(maxSize=50, blocking=False)
     calibration = device.readCalibration()
-    eeprom_data = calibration.getEepromData()
-    imu_extrinsics = eeprom_data.imuExtrinsics
+    eepromData = calibration.getEepromData()
+    imuExtrinsics = eepromData.imuExtrinsics
 
-    destination_socket = resolve_imu_extrinsics_destination(eeprom_data)
-    translation = [imu_extrinsics.translation.x, imu_extrinsics.translation.y, imu_extrinsics.translation.z]
-    spec_translation = [imu_extrinsics.specTranslation.x, imu_extrinsics.specTranslation.y, imu_extrinsics.specTranslation.z]
+    destinationSocket = resolveImuExtrinsicsDestination(eepromData)
+    translation = [imuExtrinsics.translation.x, imuExtrinsics.translation.y, imuExtrinsics.translation.z]
+    specTranslation = [imuExtrinsics.specTranslation.x, imuExtrinsics.specTranslation.y, imuExtrinsics.specTranslation.z]
 
-    calibration.setImuExtrinsics(destination_socket, YZ_SWAP_ROTATION, translation, spec_translation)
+    calibration.setImuExtrinsics(destinationSocket, yzSwapRotation, translation, specTranslation)
     device.setCalibration(calibration)
 
     pipeline.start()
-    start_time = time.monotonic()
-    last_print_time = 0.0
+    startTime = time.monotonic()
+    lastPrintTime = 0.0
     samples: deque[tuple[float, float, float, float, float, float, float, float, float]] = deque()
 
-    print(f"Applied runtime IMU extrinsics Y/Z swap relative to {destination_socket.name}.")
-    print(f"Rotation matrix: {YZ_SWAP_ROTATION}")
-    print(f"Rotation vector stream started on IMU {imu_name}.")
+    print(f"Applied runtime IMU extrinsics Y/Z swap relative to {destinationSocket.name}.")
+    print(f"Rotation matrix: {yzSwapRotation}")
+    print(f"Rotation vector stream started on IMU {imuName}.")
     print("Move the device around each axis and watch the rolling XYZ angle spans respond.")
     print("Expected use: X/Y/Z spans should match the physical axis you rotate around, without swapped signs.")
 
@@ -113,20 +113,20 @@ with dai.Pipeline() as pipeline:
 
         for imuPacket in imuData.packets:
             rotationVector = imuPacket.rotationVector
-            x_angle, y_angle, z_angle = quaternion_to_euler_xyz(
+            xAngle, yAngle, zAngle = quaternionToEulerXYZ(
                 rotationVector.i,
                 rotationVector.j,
                 rotationVector.k,
                 rotationVector.real,
             )
 
-            sample_time = time.monotonic() - start_time
+            sampleTime = time.monotonic() - startTime
             samples.append(
                 (
-                    sample_time,
-                    x_angle,
-                    y_angle,
-                    z_angle,
+                    sampleTime,
+                    xAngle,
+                    yAngle,
+                    zAngle,
                     rotationVector.i,
                     rotationVector.j,
                     rotationVector.k,
@@ -135,17 +135,17 @@ with dai.Pipeline() as pipeline:
                 )
             )
 
-            while samples and sample_time - samples[0][0] > WINDOW_SECONDS:
+            while samples and sampleTime - samples[0][0] > windowSeconds:
                 samples.popleft()
 
-        current_time = time.monotonic()
-        if samples and current_time - last_print_time >= 1.0 / PRINT_UPDATE_HZ:
+        currentTime = time.monotonic()
+        if samples and currentTime - lastPrintTime >= 1.0 / printUpdateHz:
             latest = samples[-1]
-            x_span, y_span, z_span = window_spans(samples)
+            xSpan, ySpan, zSpan = windowSpans(samples)
             print(
-                f"Window {WINDOW_SECONDS:4.1f}s span [deg]: x={x_span:7.2f} y={y_span:7.2f} z={z_span:7.2f} | "
+                f"Window {windowSeconds:4.1f}s span [deg]: x={xSpan:7.2f} y={ySpan:7.2f} z={zSpan:7.2f} | "
                 f"latest xyz=[{latest[1]:7.2f}, {latest[2]:7.2f}, {latest[3]:7.2f}] "
                 f"quat=[{latest[4]: .5f}, {latest[5]: .5f}, {latest[6]: .5f}, {latest[7]: .5f}] "
                 f"acc={latest[8]:.5f} rad"
             )
-            last_print_time = current_time
+            lastPrintTime = currentTime
