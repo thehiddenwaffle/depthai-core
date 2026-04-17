@@ -68,7 +68,8 @@ dai::CameraBoardSocket resolveImuExtrinsicsDestination(const dai::EepromData& ee
 }
 
 bool rotationVectorSupported(const std::shared_ptr<dai::Device>& device) {
-    return device->getConnectedIMU() != "BMI270";
+    const auto imuName = device->getConnectedIMU();
+    return imuName.rfind("BMI", 0) != 0;
 }
 
 std::array<double, 3> windowSpans(const std::deque<Sample>& samples) {
@@ -85,8 +86,9 @@ int main() {
     dai::Pipeline pipeline;
     auto device = pipeline.getDefaultDevice();
     const auto imuName = device->getConnectedIMU();
+    std::cout << "IMU type: " << imuName << ", firmware version: " << device->getIMUFirmwareVersion().toString() << std::endl;
     if(!rotationVectorSupported(device)) {
-        std::cout << "Skipping example: connected IMU " << imuName << " does not support ROTATION_VECTOR." << std::endl;
+        std::cout << "Device HW does not support ROTATION_VECTOR. Connected IMU: " << imuName << " (BMI IMU detected)." << std::endl;
         return 0;
     }
 

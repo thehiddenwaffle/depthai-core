@@ -46,7 +46,7 @@ def resolveImuExtrinsicsDestination(eepromData: dai.EepromData) -> dai.CameraBoa
 
 
 def rotationVectorSupported(device: dai.Device) -> bool:
-    return device.getConnectedIMU() != "BMI270"
+    return not device.getConnectedIMU().startswith("BMI")
 
 
 def windowSpans(samples: deque[tuple[float, float, float, float, float, float, float, float, float]]) -> tuple[float, float, float]:
@@ -63,8 +63,9 @@ def windowSpans(samples: deque[tuple[float, float, float, float, float, float, f
 with dai.Pipeline() as pipeline:
     device = pipeline.getDefaultDevice()
     imuName = device.getConnectedIMU()
+    print(f"IMU type: {imuName}, firmware version: {device.getIMUFirmwareVersion()}")
     if not rotationVectorSupported(device):
-        print(f"Skipping example: connected IMU {imuName} does not support ROTATION_VECTOR.")
+        print(f"Device HW does not support ROTATION_VECTOR. Connected IMU: {imuName} (BMI IMU detected).")
         raise SystemExit(0)
 
     # Define sources and outputs
