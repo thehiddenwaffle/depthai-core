@@ -1,6 +1,6 @@
+#include <array>
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <array>
 #include <chrono>
 #include <cmath>
 #include <initializer_list>
@@ -86,9 +86,18 @@ std::vector<std::vector<float>> makeAxisRotationCalibration(const std::array<flo
 }
 
 const std::vector<std::vector<float>> kIdentityCalibration = makeAxisRotationCalibration({
-    1.0f, 0.0f, 0.0f, 0.0f,
-    0.0f, 1.0f, 0.0f, 0.0f,
-    0.0f, 0.0f, 1.0f, 0.0f,
+    1.0f,
+    0.0f,
+    0.0f,
+    0.0f,
+    0.0f,
+    1.0f,
+    0.0f,
+    0.0f,
+    0.0f,
+    0.0f,
+    1.0f,
+    0.0f,
 });
 
 const std::vector<std::vector<float>> kIdentityRotation = {
@@ -243,9 +252,7 @@ bool isIdentity3x3(const std::vector<std::vector<float>>& matrix, float toleranc
     return true;
 }
 
-void requireMatrixNear(const std::vector<std::vector<float>>& actual,
-                       const std::vector<std::vector<float>>& expected,
-                       float tolerance = 1e-6f) {
+void requireMatrixNear(const std::vector<std::vector<float>>& actual, const std::vector<std::vector<float>>& expected, float tolerance = 1e-6f) {
     REQUIRE(actual.size() == expected.size());
     for(size_t i = 0; i < actual.size(); ++i) {
         REQUIRE(actual[i].size() == expected[i].size());
@@ -295,9 +302,9 @@ void requireSameImuExtrinsics(const dai::CalibrationHandler& lhs, const dai::Cal
 }
 
 Vec3 captureAverageAccelWithImuRotation(const std::vector<std::vector<float>>& rotation,
-                                       dai::IMUSensor accelerometerSensor = dai::IMUSensor::ACCELEROMETER_CALIBRATED,
-                                       int warmupPacketCount = 20,
-                                       int samplePacketCount = 200) {
+                                        dai::IMUSensor accelerometerSensor = dai::IMUSensor::ACCELEROMETER_CALIBRATED,
+                                        int warmupPacketCount = 20,
+                                        int samplePacketCount = 200) {
     dai::Pipeline p;
     auto imu = p.create<dai::node::IMU>();
     imu->enableIMUSensor(accelerometerSensor, 480);
@@ -337,9 +344,7 @@ struct ImuStreamRunResult {
     int packetCount = 0;
 };
 
-ImuStreamRunResult runImuWithCalibration(const dai::CalibrationHandler& calibration,
-                                         int samplePacketCount = 20,
-                                         int timeoutMs = 5000) {
+ImuStreamRunResult runImuWithCalibration(const dai::CalibrationHandler& calibration, int samplePacketCount = 20, int timeoutMs = 5000) {
     dai::Pipeline p;
     auto imu = p.create<dai::node::IMU>();
     imu->enableIMUSensor(dai::IMUSensor::ACCELEROMETER_RAW, 480);
@@ -374,9 +379,18 @@ TEST_CASE("Test IMU runtime calibration rotates accelerometer axes") {
 
     SECTION("swap x and y with 90 degree rotation around z") {
         const auto rotation = makeAxisRotationCalibration({
-            0.0f, 1.0f, 0.0f, 0.0f,
-            -1.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.0f,
+            0.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            -1.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            0.0f,
         });
 
         const auto rotated = captureAverageAccelerometer(dai::IMUSensor::ACCELEROMETER_CALIBRATED, rotation);
@@ -385,9 +399,18 @@ TEST_CASE("Test IMU runtime calibration rotates accelerometer axes") {
 
     SECTION("swap x and z with 90 degree rotation around y") {
         const auto rotation = makeAxisRotationCalibration({
-            0.0f, 0.0f, 1.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            -1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            -1.0f,
+            0.0f,
+            0.0f,
+            0.0f,
         });
 
         const auto rotated = captureAverageAccelerometer(dai::IMUSensor::ACCELEROMETER_CALIBRATED, rotation);
@@ -396,9 +419,18 @@ TEST_CASE("Test IMU runtime calibration rotates accelerometer axes") {
 
     SECTION("swap y and z with 90 degree rotation around x") {
         const auto rotation = makeAxisRotationCalibration({
-            1.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.0f,
-            0.0f, -1.0f, 0.0f, 0.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            -1.0f,
+            0.0f,
+            0.0f,
         });
 
         const auto rotated = captureAverageAccelerometer(dai::IMUSensor::ACCELEROMETER_CALIBRATED, rotation);
@@ -409,9 +441,18 @@ TEST_CASE("Test IMU runtime calibration rotates accelerometer axes") {
 TEST_CASE("Test IMU uncalibrated accelerometer ignores runtime affine calibration") {
     const auto baseline = captureAverageAccelerometer(dai::IMUSensor::ACCELEROMETER_UNCALIBRATED);
     const auto rotation = makeAxisRotationCalibration({
-        0.0f, 1.0f, 0.0f, 0.0f,
-        -1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.125f,
+        0.0f,
+        1.0f,
+        0.0f,
+        0.0f,
+        -1.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        1.0f,
+        0.125f,
     });
     const auto uncalibrated = captureAverageAccelerometer(dai::IMUSensor::ACCELEROMETER_UNCALIBRATED, rotation);
     requireVecNear(uncalibrated, baseline, 1e-2f);
@@ -423,9 +464,18 @@ TEST_CASE("Test IMU runtime calibration applies bias offsets") {
 
     SECTION("bias on x axis") {
         const auto calibration = makeAxisRotationCalibration({
-            1.0f, 0.0f, 0.0f, 0.125f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            0.125f,
+            0.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            0.0f,
         });
 
         const auto accelBiased = captureAverageAccelerometer(dai::IMUSensor::ACCELEROMETER_CALIBRATED, calibration);
@@ -436,9 +486,18 @@ TEST_CASE("Test IMU runtime calibration applies bias offsets") {
 
     SECTION("bias on y axis") {
         const auto calibration = makeAxisRotationCalibration({
-            1.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, -0.125f,
-            0.0f, 0.0f, 1.0f, 0.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            0.0f,
+            -0.125f,
+            0.0f,
+            0.0f,
+            1.0f,
+            0.0f,
         });
 
         const auto accelBiased = captureAverageAccelerometer(dai::IMUSensor::ACCELEROMETER_CALIBRATED, calibration);
@@ -449,9 +508,18 @@ TEST_CASE("Test IMU runtime calibration applies bias offsets") {
 
     SECTION("bias on z axis") {
         const auto calibration = makeAxisRotationCalibration({
-            1.0f, 0.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f, 0.0f,
-            0.0f, 0.0f, 1.0f, 0.125f,
+            1.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            0.0f,
+            1.0f,
+            0.125f,
         });
 
         const auto accelBiased = captureAverageAccelerometer(dai::IMUSensor::ACCELEROMETER_CALIBRATED, calibration);
@@ -550,8 +618,8 @@ TEST_CASE("Test setImuRotation applies extrinsics rotation to accelerometer via 
         // R_z(90°): x' = -y, y' = x, z' = z
         const std::vector<std::vector<float>> rotZ90 = {
             {0.0f, -1.0f, 0.0f},
-            {1.0f,  0.0f, 0.0f},
-            {0.0f,  0.0f, 1.0f},
+            {1.0f, 0.0f, 0.0f},
+            {0.0f, 0.0f, 1.0f},
         };
         const auto rotated = captureAverageAccelWithImuRotation(rotZ90);
         requireVecNear(rotated, applyRotation(rotZ90, baselineRaw));
@@ -560,8 +628,8 @@ TEST_CASE("Test setImuRotation applies extrinsics rotation to accelerometer via 
     SECTION("90 degree rotation around Y swaps X and Z axes") {
         // R_y(90°): x' = z, y' = y, z' = -x
         const std::vector<std::vector<float>> rotY90 = {
-            { 0.0f, 0.0f, 1.0f},
-            { 0.0f, 1.0f, 0.0f},
+            {0.0f, 0.0f, 1.0f},
+            {0.0f, 1.0f, 0.0f},
             {-1.0f, 0.0f, 0.0f},
         };
         const auto rotated = captureAverageAccelWithImuRotation(rotY90);
@@ -571,8 +639,8 @@ TEST_CASE("Test setImuRotation applies extrinsics rotation to accelerometer via 
     SECTION("90 degree rotation around X swaps Y and Z axes") {
         // R_x(90°): x' = x, y' = z, z' = -y
         const std::vector<std::vector<float>> rotX90 = {
-            {1.0f,  0.0f, 0.0f},
-            {0.0f,  0.0f, 1.0f},
+            {1.0f, 0.0f, 0.0f},
+            {0.0f, 0.0f, 1.0f},
             {0.0f, -1.0f, 0.0f},
         };
         const auto rotated = captureAverageAccelWithImuRotation(rotX90);
@@ -584,15 +652,23 @@ TEST_CASE("Test setImuRotation does not affect affine calibration path") {
     // ACCELEROMETER_UNCALIBRATED goes through rotateImuVector (extrinsics rotation) but
     // ignores imuCalibrationParams (affine calibration). Verify that setting only the
     // affine calibration matrix does not alter ACCELEROMETER_UNCALIBRATED readings.
-    const auto baselineUncalib =
-        captureAverageAccelWithImuRotation(kIdentityRotation, dai::IMUSensor::ACCELEROMETER_UNCALIBRATED);
+    const auto baselineUncalib = captureAverageAccelWithImuRotation(kIdentityRotation, dai::IMUSensor::ACCELEROMETER_UNCALIBRATED);
 
     const auto withAffineOnly = captureAverageAccelerometer(dai::IMUSensor::ACCELEROMETER_UNCALIBRATED,
-                                                             makeAxisRotationCalibration({
-                                                                 0.0f, 1.0f, 0.0f, 0.0f,
-                                                                 -1.0f, 0.0f, 0.0f, 0.0f,
-                                                                 0.0f, 0.0f, 1.0f, 0.0f,
-    }));
+                                                            makeAxisRotationCalibration({
+                                                                0.0f,
+                                                                1.0f,
+                                                                0.0f,
+                                                                0.0f,
+                                                                -1.0f,
+                                                                0.0f,
+                                                                0.0f,
+                                                                0.0f,
+                                                                0.0f,
+                                                                0.0f,
+                                                                1.0f,
+                                                                0.0f,
+                                                            }));
     requireVecNear(withAffineOnly, baselineUncalib, 1e-2f);
 }
 

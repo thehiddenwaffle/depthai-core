@@ -444,9 +444,9 @@ class CalibrationHandler {
 
     /**
      * Get complete IMU noise parameters.
-        *
-        * Accelerometer noise terms are stored in [m/s^2]-based units. Gyroscope
-        * noise terms are stored in [rad/s]-based units.
+     *
+     * Accelerometer noise terms are stored in [m/s^2]-based units. Gyroscope
+     * noise terms are stored in [rad/s]-based units.
      *
      * @return returns IMU noise parameters
      */
@@ -454,9 +454,9 @@ class CalibrationHandler {
 
     /**
      * Get full IMU parameter payload.
-        *
-        * Accelerometer calibration bias terms are stored in [m/s^2]. Gyroscope
-        * calibration bias terms are stored in [rad/s].
+     *
+     * Accelerometer calibration bias terms are stored in [m/s^2]. Gyroscope
+     * calibration bias terms are stored in [rad/s].
      *
      * @return returns IMU parameters containing noise + calibration matrices
      */

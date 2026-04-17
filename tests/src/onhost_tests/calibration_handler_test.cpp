@@ -964,16 +964,8 @@ TEST_CASE("EEPROM data stereo flags consistency", "[getEepromData]") {
 TEST_CASE("IMU calibration params setters preserve accelerometer and gyroscope values", "[imuCalibration][getEepromData]") {
     dai::CalibrationHandler handler;
 
-    const std::vector<std::vector<float>> expectedAccelerometer = {
-        {0.1f, -0.2f, 0.3f, 1.0f},
-        {1.1f, 1.2f, -0.4f, 0.5f},
-        {-0.6f, 9.81f, 0.01f, -0.02f}
-    };
-    const std::vector<std::vector<float>> expectedGyroscope = {
-        {-0.7f, 0.8f, -0.9f, 0.001f},
-        {0.002f, 0.003f, 1.3f, 1.4f},
-        {1.5f, -0.03f, 0.04f, -0.05f}
-    };
+    const std::vector<std::vector<float>> expectedAccelerometer = {{0.1f, -0.2f, 0.3f, 1.0f}, {1.1f, 1.2f, -0.4f, 0.5f}, {-0.6f, 9.81f, 0.01f, -0.02f}};
+    const std::vector<std::vector<float>> expectedGyroscope = {{-0.7f, 0.8f, -0.9f, 0.001f}, {0.002f, 0.003f, 1.3f, 1.4f}, {1.5f, -0.03f, 0.04f, -0.05f}};
     const auto expectedImuNoiseParameters = makeImuNoiseParams();
 
     handler.setAccelerometerCalibration(expectedAccelerometer);
@@ -1024,7 +1016,6 @@ TEST_CASE("EEPROM constructor preserves IMU calibration params", "[imuCalibratio
     requireImuNoiseParamsEqual(loaded.imuCalibrationParams.noise, data.imuCalibrationParams.noise);
     requireImuNoiseParamsEqual(handler.getImuNoiseParameters(), data.imuCalibrationParams.noise);
 }
-
 
 TEST_CASE("EEPROM cameraData is replaced correctly when constructing CalibrationHandler", "[getEepromData]") {
     // Load some real eeprom data to get correct board config

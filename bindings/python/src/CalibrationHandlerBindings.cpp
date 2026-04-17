@@ -253,10 +253,7 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
              &CalibrationHandler::setGyroscopeCalibration,
              py::arg("calibration"),
              DOC(dai, CalibrationHandler, setGyroscopeCalibration))
-        .def("setImuParameters",
-             &CalibrationHandler::setImuParameters,
-             py::arg("imuParameters"),
-             DOC(dai, CalibrationHandler, setImuParameters))
+        .def("setImuParameters", &CalibrationHandler::setImuParameters, py::arg("imuParameters"), DOC(dai, CalibrationHandler, setImuParameters))
         .def("validateCalibrationHandler",
              &CalibrationHandler::validateCalibrationHandler,
              py::arg("throwOnError") = true,

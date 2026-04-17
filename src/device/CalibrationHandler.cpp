@@ -1,6 +1,7 @@
 #include <vector>
 #define _USE_MATH_DEFINES
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -9,7 +10,6 @@
 #include <string>
 #include <tuple>
 #include <unordered_set>
-#include <algorithm>
 
 #include "depthai/common/CameraInfo.hpp"
 #include "depthai/common/DepthUnit.hpp"
