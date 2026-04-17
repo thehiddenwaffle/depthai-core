@@ -72,15 +72,9 @@ bool rotationVectorSupported(const std::shared_ptr<dai::Device>& device) {
 }
 
 std::array<double, 3> windowSpans(const std::deque<Sample>& samples) {
-    const auto [minX, maxX] = std::minmax_element(samples.begin(), samples.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.x < rhs.x;
-    });
-    const auto [minY, maxY] = std::minmax_element(samples.begin(), samples.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.y < rhs.y;
-    });
-    const auto [minZ, maxZ] = std::minmax_element(samples.begin(), samples.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.z < rhs.z;
-    });
+    const auto [minX, maxX] = std::minmax_element(samples.begin(), samples.end(), [](const auto& lhs, const auto& rhs) { return lhs.x < rhs.x; });
+    const auto [minY, maxY] = std::minmax_element(samples.begin(), samples.end(), [](const auto& lhs, const auto& rhs) { return lhs.y < rhs.y; });
+    const auto [minZ, maxZ] = std::minmax_element(samples.begin(), samples.end(), [](const auto& lhs, const auto& rhs) { return lhs.z < rhs.z; });
 
     return {maxX->x - minX->x, maxY->y - minY->y, maxZ->z - minZ->z};
 }
@@ -133,15 +127,8 @@ int main() {
             const auto now = std::chrono::steady_clock::now();
             const double sampleSeconds = std::chrono::duration<double>(now - startTime).count();
 
-            samples.push_back({sampleSeconds,
-                               x,
-                               y,
-                               z,
-                               rotationVector.i,
-                               rotationVector.j,
-                               rotationVector.k,
-                               rotationVector.real,
-                               rotationVector.rotationVectorAccuracy});
+            samples.push_back(
+                {sampleSeconds, x, y, z, rotationVector.i, rotationVector.j, rotationVector.k, rotationVector.real, rotationVector.rotationVectorAccuracy});
 
             while(!samples.empty() && sampleSeconds - samples.front().seconds > windowSeconds) {
                 samples.pop_front();
@@ -152,11 +139,10 @@ int main() {
         if(!samples.empty() && std::chrono::duration<double>(now - lastPrintTime).count() >= 1.0 / printUpdateHz) {
             const auto& latest = samples.back();
             const auto spans = windowSpans(samples);
-            std::cout << "Window " << std::setw(4) << windowSeconds << "s span [deg]: x=" << std::setw(8) << spans[0] << " y=" << std::setw(8)
-                      << spans[1] << " z=" << std::setw(8) << spans[2] << " | latest xyz=[" << std::setw(8) << latest.x << ", " << std::setw(8)
-                      << latest.y << ", " << std::setw(8) << latest.z << "] quat=[" << std::setw(9) << latest.i << ", " << std::setw(9)
-                      << latest.j << ", " << std::setw(9) << latest.k << ", " << std::setw(9) << latest.real << "] acc=" << latest.accuracy
-                      << " rad" << std::endl;
+            std::cout << "Window " << std::setw(4) << windowSeconds << "s span [deg]: x=" << std::setw(8) << spans[0] << " y=" << std::setw(8) << spans[1]
+                      << " z=" << std::setw(8) << spans[2] << " | latest xyz=[" << std::setw(8) << latest.x << ", " << std::setw(8) << latest.y << ", "
+                      << std::setw(8) << latest.z << "] quat=[" << std::setw(9) << latest.i << ", " << std::setw(9) << latest.j << ", " << std::setw(9)
+                      << latest.k << ", " << std::setw(9) << latest.real << "] acc=" << latest.accuracy << " rad" << std::endl;
             lastPrintTime = now;
         }
     }
