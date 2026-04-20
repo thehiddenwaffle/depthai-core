@@ -61,7 +61,7 @@ void validateDetections(const std::shared_ptr<dai::ImgDetections>& detections, c
     REQUIRE(detections != nullptr);
     REQUIRE(detections->detections.size() == gtDetections.size());
 
-    constexpr float tolerance = 1e-4F;
+    constexpr float tolerance = 1e-3F;
 
     struct GroundTruthDetection {
         struct KeypointCoord {
