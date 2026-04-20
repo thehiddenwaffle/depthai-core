@@ -27,7 +27,7 @@ class StereoDepthConfig : public Buffer {
         /**
          * Align the disparity/depth to the perspective of a rectified output, or center it
          */
-        enum class DepthAlign : int32_t {AUTO, RECTIFIED_RIGHT, RECTIFIED_LEFT, CENTER, RIGHT, LEFT};
+        enum class DepthAlign : int32_t { AUTO, RECTIFIED_RIGHT, RECTIFIED_LEFT, CENTER, RIGHT, LEFT };
 
         using DepthUnit = dai::DepthUnit;
 
