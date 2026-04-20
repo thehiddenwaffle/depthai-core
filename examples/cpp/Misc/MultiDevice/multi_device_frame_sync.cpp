@@ -180,7 +180,7 @@ void setUpCameraSocket(std::shared_ptr<dai::Pipeline>& pipeline,
 std::string getDeviceName(const std::shared_ptr<dai::Device>& device) {
     auto info = device->getDeviceInfo();
     auto name = info.deviceId;
-    if(!info.name.empty() || info.name == "") {
+    if(!info.name.empty() && info.name != "") {
         name += "[" + info.name + "]";
     }
     return name;

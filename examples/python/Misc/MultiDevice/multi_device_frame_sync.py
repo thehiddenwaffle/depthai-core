@@ -147,7 +147,7 @@ def setUpCameraSocket(
 def getDeviceName(device : dai.Device) -> str:
     info = device.getDeviceInfo()
     name = info.deviceId
-    if info.name is not None or info.name != "":
+    if info.name is not None and info.name != "":
         name += "[" + info.name + "]"
     return name
 
