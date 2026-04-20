@@ -1,18 +1,18 @@
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
+#include <chrono>
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
-#include <chrono>
 
 #include "depthai/capabilities/ImgFrameCapability.hpp"
 #include "depthai/common/CameraBoardSocket.hpp"
 #include "depthai/common/StereoPair.hpp"
 #include "depthai/depthai.hpp"
-#include "depthai/pipeline/datatype/ImgFrame.hpp"
 #include "depthai/pipeline/datatype/CameraControl.hpp"
+#include "depthai/pipeline/datatype/ImgFrame.hpp"
 #include "depthai/pipeline/node/Camera.hpp"
 
 struct Thresholds {
@@ -91,21 +91,18 @@ std::map<dai::CameraBoardSocket, std::shared_ptr<dai::ImgFrame>> collectOneFrame
             }
         }
         REQUIRE(expectedSlaveFps.has_value());
-        const auto syncThreshold =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(0.5 / expectedSlaveFps.value()));
+        const auto syncThreshold = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(0.5 / expectedSlaveFps.value()));
         sync->setSyncThreshold(syncThreshold);
     }
 
     for(const auto& request : requests) {
         auto camera = pipeline.create<dai::node::Camera>()->build(request.socket);
         camera->initialControl.setFrameSyncMode(request.frameSyncMode);
-        const auto outputSize =
-            request.socket == dai::CameraBoardSocket::CAM_A ? std::make_pair(1280U, 800U) : std::make_pair(640U, 400U);
+        const auto outputSize = request.socket == dai::CameraBoardSocket::CAM_A ? std::make_pair(1280U, 800U) : std::make_pair(640U, 400U);
         auto* output = camera->requestOutput(outputSize, std::nullopt, dai::ImgResizeMode::CROP, request.fps);
         REQUIRE(output != nullptr);
         queues.emplace(request.socket, output->createOutputQueue(4, false));
-        if(sync != nullptr
-           && std::find(expectedSlaveSockets.begin(), expectedSlaveSockets.end(), request.socket) != expectedSlaveSockets.end()) {
+        if(sync != nullptr && std::find(expectedSlaveSockets.begin(), expectedSlaveSockets.end(), request.socket) != expectedSlaveSockets.end()) {
             output->link(sync->inputs[dai::toString(request.socket)]);
         }
     }
@@ -133,12 +130,13 @@ std::map<dai::CameraBoardSocket, std::shared_ptr<dai::ImgFrame>> collectOneFrame
 
             const auto [minIt, maxIt] = std::minmax_element(slaveTimestamps.begin(), slaveTimestamps.end());
             auto threshold = RVC4_THRESHOLDS.all;
-            const bool expectedPairIsStereo =
-                std::find_if(stereoPairs.begin(), stereoPairs.end(), [&](const auto& pair) {
-                    return (pair.left == expectedSlaveSockets[0] && pair.right == expectedSlaveSockets[1])
-                           || (pair.left == expectedSlaveSockets[1] && pair.right == expectedSlaveSockets[0]);
-                })
-                != stereoPairs.end();
+            const bool expectedPairIsStereo = std::find_if(stereoPairs.begin(),
+                                                           stereoPairs.end(),
+                                                           [&](const auto& pair) {
+                                                               return (pair.left == expectedSlaveSockets[0] && pair.right == expectedSlaveSockets[1])
+                                                                      || (pair.left == expectedSlaveSockets[1] && pair.right == expectedSlaveSockets[0]);
+                                                           })
+                                              != stereoPairs.end();
             if(expectedSlaveSockets.size() == 2 && expectedPairIsStereo) {
                 threshold = RVC4_THRESHOLDS.leftRight;
             }
@@ -169,7 +167,6 @@ void requireExpectedMetadata(const std::map<dai::CameraBoardSocket, std::shared_
         REQUIRE(it->second->getFps() == Catch::Approx(expectation.fps).margin(0.05));
         REQUIRE(it->second->getSensorMode() >= 0);
     }
-
 }
 
 bool isPartOfStereoPair(dai::CameraBoardSocket socket, const std::vector<dai::StereoPair>& stereoPairs) {
