@@ -84,26 +84,6 @@ std::optional<std::chrono::milliseconds> currentRpcTimeout() {
     return ScopedRpcTimeout::tlRpcTimeout;
 }
 
-bool isPtpUsed(dai::PipelineSchema &schema) {
-    // find all camera nodes
-    for (const auto &[id, nodeInfo] : schema.nodes) {
-        try {
-            if(nodeInfo.name == "Camera") {
-                dai::CameraProperties props;
-                dai::utility::deserialize(nodeInfo.properties, props);  // LIBNOP by default
-                if (props.initialControl.getCommand(dai::CameraControl::Command::FRAME_SYNC)) {
-                    if (props.initialControl.frameSyncMode == dai::CameraControl::FrameSyncMode::TIME_PTP) {
-                        return true;
-                    }
-                }
-            }
-        } catch(const std::exception& e) {
-            dai::logger::error("Exception during deserializing properties: {}", e.what());
-        }
-    }
-    return false;
-}
-
 bool isDebuggerEnabled() {
     return dai::utility::getEnvAs<bool>("DEPTHAI_DEBUGGER", false);
 }
@@ -2050,13 +2030,11 @@ bool DeviceBase::startPipelineImpl(const Pipeline& pipeline) {
     bool success = false;
     std::string errorMsg;
 
-    if (!isPtpUsed(schema)) {
-        // Initialize the device (External frame sync slaves need to lock onto the signal first)
-        std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>(std::chrono::seconds(60), "waitForDeviceReady");
+    // Initialize the device (External frame sync slaves need to lock onto the signal first)
+    std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>(std::chrono::seconds(60), "waitForDeviceReady");
 
-        if(!success) {
-            throw std::runtime_error("Device " + getDeviceId() + " not ready: " + errorMsg);
-        }
+    if(!success) {
+        throw std::runtime_error("Device " + getDeviceId() + " not ready: " + errorMsg);
     }
 
     // Build and start the pipeline
