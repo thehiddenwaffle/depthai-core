@@ -2,6 +2,7 @@
 #pragma once
 
 // standard
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <type_traits>
@@ -165,6 +166,7 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
 
     // is pipeline running
     AtomicBool running{false};
+    std::optional<std::chrono::steady_clock::time_point> analyticsPipelineStartedAt;
 
     // was pipeline built
     AtomicBool isBuild{false};

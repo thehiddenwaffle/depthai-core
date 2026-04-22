@@ -10,6 +10,7 @@
 #include "depthai/pipeline/node/internal/XLinkInHost.hpp"
 #include "depthai/pipeline/node/internal/XLinkOut.hpp"
 #include "depthai/pipeline/node/internal/XLinkOutHost.hpp"
+#include "depthai/utility/Analytics.hpp"
 #include "properties/GlobalProperties.hpp"
 #include "utility/Compression.hpp"
 #include "utility/Environment.hpp"
@@ -88,6 +89,56 @@ std::optional<PipelineAutoCalibrationMode> parseAutoCalibrationMode(std::string_
         return PipelineAutoCalibrationMode::CONTINUOUS;
     }
     return std::nullopt;
+}
+
+void emitHostOnlyPipelineStartedAnalytics(const dai::PipelineSchema& schema, const std::string& anonymousAnalyticsId, const std::string& deviceId) {
+    if(!dai::utility::getEnvAs<bool>("DEPTHAI_ANALYTICS", true, false)) {
+        return;
+    }
+
+    static dai::utility::Analytics analytics;
+    nlohmann::json properties = {
+        {"host_only", true},
+        {"node_count", schema.nodes.size()},
+        {"connection_count", schema.connections.size()},
+        {"bridge_count", schema.bridges.size()},
+    };
+
+    if(!anonymousAnalyticsId.empty()) {
+        properties["__analytics_distinct_id"] = anonymousAnalyticsId;
+        properties["anonymous_analytics_id"] = anonymousAnalyticsId;
+    }
+    if(!deviceId.empty()) {
+        properties["device_id"] = deviceId;
+    }
+
+    analytics.event("pipeline_start", std::move(properties));
+}
+
+void emitPipelineStoppedAnalytics(
+    const dai::PipelineSchema& schema, const std::string& anonymousAnalyticsId, const std::string& deviceId, int64_t durationMs, bool hostOnly) {
+    if(!dai::utility::getEnvAs<bool>("DEPTHAI_ANALYTICS", true, false)) {
+        return;
+    }
+
+    nlohmann::json properties = {
+        {"host_only", hostOnly},
+        {"node_count", schema.nodes.size()},
+        {"connection_count", schema.connections.size()},
+        {"bridge_count", schema.bridges.size()},
+        {"duration_ms", durationMs},
+    };
+
+    if(!anonymousAnalyticsId.empty()) {
+        properties["__analytics_distinct_id"] = anonymousAnalyticsId;
+        properties["anonymous_analytics_id"] = anonymousAnalyticsId;
+    }
+    if(!deviceId.empty()) {
+        properties["device_id"] = deviceId;
+    }
+
+    static dai::utility::Analytics analytics;
+    analytics.event("pipeline_stop", std::move(properties));
 }
 
 #ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
@@ -1124,6 +1175,14 @@ void PipelineImpl::start() {
         }
     }
 
+    analyticsPipelineStartedAt = std::chrono::steady_clock::now();
+
+    if(isHostOnly()) {
+        emitHostOnlyPipelineStartedAnalytics(getPipelineSchema(SerializationType::JSON, false),
+                                             defaultDevice ? defaultDevice->anonymousAnalyticsId : "",
+                                             defaultDevice ? defaultDevice->getDeviceId() : "");
+    }
+
     // Add pointer to the pipeline to the device
     if(defaultDevice) {
         std::shared_ptr<PipelineImpl> shared = shared_from_this();
@@ -1190,6 +1249,17 @@ void PipelineImpl::stop() {
     if(!running) {
         return;
     }
+
+    if(analyticsPipelineStartedAt.has_value()) {
+        const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *analyticsPipelineStartedAt).count();
+        emitPipelineStoppedAnalytics(getPipelineSchema(SerializationType::JSON, false),
+                                     defaultDevice ? defaultDevice->anonymousAnalyticsId : "",
+                                     defaultDevice ? defaultDevice->getDeviceId() : "",
+                                     durationMs,
+                                     isHostOnly());
+        analyticsPipelineStartedAt.reset();
+    }
+
     // Stops the pipeline execution
     for(const auto& node : getAllNodes()) {
         if(node->runOnHost()) {

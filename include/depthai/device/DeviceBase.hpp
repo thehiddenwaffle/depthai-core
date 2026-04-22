@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -1041,6 +1042,12 @@ class DeviceBase {
     // private functions
     void init2(Config cfg, const std::filesystem::path& pathToMvcmd, bool hasPipeline, bool reconnect = false);
     void tryGetDevice();
+    void startAnalyticsLifecycle(bool reconnect);
+    void stopAnalyticsLifecycle();
+    void emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann::json properties = {}) const;
+    std::string fetchAnonymousAnalyticsId();
+    void analyticsEventLoop();
+    void analyticsPingLoop();
     struct PrevInfo {
         DeviceInfo deviceInfo;
         Config cfg;
@@ -1107,6 +1114,17 @@ class DeviceBase {
 
     std::filesystem::path firmwarePath;
     bool dumpOnly = false;
+
+    // Analytics
+    std::thread analyticsEventThread;
+    std::atomic<bool> analyticsEventRunning{false};
+    std::thread analyticsPingThread;
+    std::atomic<bool> analyticsPingRunning{false};
+    std::condition_variable analyticsPingCondVar;
+    std::mutex analyticsPingMtx;
+    std::string anonymousAnalyticsId;
+    std::chrono::steady_clock::time_point analyticsCreatedAt;
+    bool analyticsLifecycleStarted = false;
 
     // Started pipeline
     std::optional<PipelineSchema> pipelineSchema;

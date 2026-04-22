@@ -30,6 +30,7 @@
 #include "depthai/device/EepromError.hpp"
 #include "depthai/pipeline/node/internal/XLinkIn.hpp"
 #include "depthai/pipeline/node/internal/XLinkOut.hpp"
+#include "depthai/utility/Analytics.hpp"
 #include "device/DeviceGate.hpp"
 #include "pipeline/Pipeline.hpp"
 #include "properties/GlobalProperties.hpp"
@@ -83,6 +84,15 @@ std::optional<std::chrono::milliseconds> currentRpcTimeout() {
 
 bool isDebuggerEnabled() {
     return dai::utility::getEnvAs<bool>("DEPTHAI_DEBUGGER", false);
+}
+
+dai::utility::Analytics& analyticsInstance() {
+    static dai::utility::Analytics analytics;
+    return analytics;
+}
+
+bool isAnalyticsEnabled() {
+    return dai::utility::getEnvAs<bool>("DEPTHAI_ANALYTICS", true, false);
 }
 
 }  // namespace
@@ -486,9 +496,136 @@ DeviceBase::DeviceBase(Config config, const DeviceInfo& devInfo) : deviceInfo(de
 void DeviceBase::close() {
     std::unique_lock<std::mutex> lock(closedMtx);
     if(!closed) {
+        stopAnalyticsLifecycle();
         closeImpl();
         closed = true;
     }
+}
+
+void DeviceBase::emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann::json properties) const {
+    if(!isAnalyticsEnabled()) {
+        return;
+    }
+
+    try {
+        if(!properties.is_object()) {
+            properties = nlohmann::json::object();
+        }
+        if(!anonymousAnalyticsId.empty()) {
+            properties["__analytics_distinct_id"] = anonymousAnalyticsId;
+            properties["anonymous_analytics_id"] = anonymousAnalyticsId;
+        }
+        properties["device_id"] = deviceInfo.getDeviceId();
+        analyticsInstance().event(eventName, std::move(properties));
+    } catch(const std::exception& ex) {
+        logger::debug("Analytics event '{}' failed: {}", eventName, ex.what());
+    }
+}
+
+std::string DeviceBase::fetchAnonymousAnalyticsId() {
+    if(!anonymousAnalyticsId.empty()) {
+        return anonymousAnalyticsId;
+    }
+
+    if(!isAnalyticsEnabled()) {
+        return "";
+    }
+
+    try {
+        anonymousAnalyticsId = pimpl->rpcCallChecked<std::string>("getAnonymousAnalyticsId");
+    } catch(const std::exception& ex) {
+        pimpl->logger.debug("Failed to fetch anonymous analytics id: {}", ex.what());
+    }
+
+    return anonymousAnalyticsId;
+}
+
+void DeviceBase::analyticsEventLoop() {
+    using namespace std::chrono_literals;
+
+    while(analyticsEventRunning) {
+        try {
+            XLinkStream stream(connection, device::XLINK_CHANNEL_ANALYTICS, device::XLINK_USB_BUFFER_MAX_SIZE);
+            while(analyticsEventRunning) {
+                std::vector<std::uint8_t> data;
+                if(!stream.read(data, 500ms)) {
+                    continue;
+                }
+
+                try {
+                    auto payload = nlohmann::json::parse(data.begin(), data.end());
+                    if(!payload.is_object()) {
+                        continue;
+                    }
+
+                    auto eventName = payload.value("event", std::string{});
+                    auto properties = payload.value("properties", nlohmann::json::object());
+                    if(!properties.is_object()) {
+                        properties = nlohmann::json::object();
+                    }
+                    emitDeviceAnalyticsEvent(eventName, std::move(properties));
+                } catch(const std::exception& ex) {
+                    pimpl->logger.debug("Failed to parse analytics event from device: {}", ex.what());
+                }
+            }
+        } catch(const std::exception& ex) {
+            if(analyticsEventRunning) {
+                pimpl->logger.debug("Analytics event thread exception caught: {}", ex.what());
+                std::this_thread::sleep_for(500ms);
+            }
+        }
+    }
+}
+
+void DeviceBase::analyticsPingLoop() {
+    using namespace std::chrono_literals;
+
+    std::unique_lock<std::mutex> lock(analyticsPingMtx);
+    while(analyticsPingRunning) {
+        if(analyticsPingCondVar.wait_for(lock, 20s, [this]() { return !analyticsPingRunning.load(); })) {
+            break;
+        }
+
+        lock.unlock();
+        emitDeviceAnalyticsEvent("ping");
+        lock.lock();
+    }
+}
+
+void DeviceBase::startAnalyticsLifecycle(bool reconnect) {
+    if(reconnect || dumpOnly || analyticsLifecycleStarted || !isAnalyticsEnabled()) {
+        return;
+    }
+
+    analyticsCreatedAt = std::chrono::steady_clock::now();
+    fetchAnonymousAnalyticsId();
+    analyticsLifecycleStarted = true;
+    emitDeviceAnalyticsEvent("device_constructor");
+
+    analyticsEventRunning = true;
+    analyticsEventThread = std::thread(&DeviceBase::analyticsEventLoop, this);
+    analyticsPingRunning = true;
+    analyticsPingThread = std::thread(&DeviceBase::analyticsPingLoop, this);
+}
+
+void DeviceBase::stopAnalyticsLifecycle() {
+    if(!analyticsLifecycleStarted) {
+        return;
+    }
+
+    analyticsEventRunning = false;
+    if(analyticsEventThread.joinable()) {
+        analyticsEventThread.join();
+    }
+    analyticsPingRunning = false;
+    analyticsPingCondVar.notify_all();
+    if(analyticsPingThread.joinable()) {
+        analyticsPingThread.join();
+    }
+
+    const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - analyticsCreatedAt).count();
+    emitDeviceAnalyticsEvent("device_destructor", nlohmann::json{{"duration_ms", durationMs}});
+    analyticsLifecycleStarted = false;
 }
 
 unsigned int getCrashdumpTimeout(XLinkProtocol_t protocol) {
@@ -1186,6 +1323,7 @@ void DeviceBase::init2(Config cfg, const std::filesystem::path& pathToMvcmd, boo
             // Starts and waits for initial timesync
             setTimesync(DEFAULT_TIMESYNC_PERIOD, DEFAULT_TIMESYNC_NUM_SAMPLES, DEFAULT_TIMESYNC_RANDOM);
             pimpl->rpcCallCheckedVoid("onInit");
+            startAnalyticsLifecycle(reconnect);
         } catch(const std::exception&) {
             // close device (cleanup)
             close();
@@ -2039,6 +2177,13 @@ bool DeviceBase::startPipelineImpl(const Pipeline& pipeline) {
     std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>("buildPipeline");
     if(success) {
         pimpl->rpcCallCheckedVoid("startPipeline");
+        emitDeviceAnalyticsEvent("pipeline_start",
+                                 nlohmann::json{
+                                     {"host_only", false},
+                                     {"node_count", schema.nodes.size()},
+                                     {"connection_count", schema.connections.size()},
+                                     {"bridge_count", schema.bridges.size()},
+                                 });
     } else {
         throw std::runtime_error("Device " + getDeviceId() + " error: " + errorMsg);
         return false;
