@@ -4,11 +4,15 @@
 #include <XLink/XLinkPublicDefines.h>
 #include <spdlog/fmt/ostr.h>
 
+#include <array>
 #include <chrono>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <mutex>
 #include <optional>
+#include <random>
+#include <sstream>
 #include <stdexcept>
 #include <system_error>
 #include <thread>
@@ -93,6 +97,39 @@ dai::utility::Analytics& analyticsInstance() {
 
 bool isAnalyticsEnabled() {
     return dai::utility::getEnvAs<bool>("DEPTHAI_ANALYTICS", true, false);
+}
+
+std::string generateAnalyticsSessionId() {
+    static std::mt19937_64 generator(std::random_device{}());
+    static std::uniform_int_distribution<int> distribution(0, 255);
+
+    std::array<std::uint8_t, 16> bytes{};
+    const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+    // UUIDv7: first 48 bits are Unix epoch milliseconds in big-endian order.
+    bytes[0] = static_cast<std::uint8_t>((nowMs >> 40) & 0xFF);
+    bytes[1] = static_cast<std::uint8_t>((nowMs >> 32) & 0xFF);
+    bytes[2] = static_cast<std::uint8_t>((nowMs >> 24) & 0xFF);
+    bytes[3] = static_cast<std::uint8_t>((nowMs >> 16) & 0xFF);
+    bytes[4] = static_cast<std::uint8_t>((nowMs >> 8) & 0xFF);
+    bytes[5] = static_cast<std::uint8_t>(nowMs & 0xFF);
+
+    for(std::size_t index = 6; index < bytes.size(); ++index) {
+        bytes[index] = static_cast<std::uint8_t>(distribution(generator));
+    }
+
+    bytes[6] = static_cast<std::uint8_t>((bytes[6] & 0x0F) | 0x70);
+    bytes[8] = static_cast<std::uint8_t>((bytes[8] & 0x3F) | 0x80);
+
+    std::ostringstream stream;
+    stream << std::hex << std::setfill('0');
+    for(std::size_t index = 0; index < bytes.size(); ++index) {
+        stream << std::setw(2) << static_cast<int>(bytes[index]);
+        if(index == 3 || index == 5 || index == 7 || index == 9) {
+            stream << '-';
+        }
+    }
+    return stream.str();
 }
 
 }  // namespace
@@ -515,11 +552,32 @@ void DeviceBase::emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann
             properties["__analytics_distinct_id"] = anonymousAnalyticsId;
             properties["anonymous_analytics_id"] = anonymousAnalyticsId;
         }
+        properties["$session_id"] = getAnalyticsSessionId();
         properties["device_id"] = deviceInfo.getDeviceId();
         analyticsInstance().event(eventName, std::move(properties));
     } catch(const std::exception& ex) {
         logger::debug("Analytics event '{}' failed: {}", eventName, ex.what());
     }
+}
+
+void DeviceBase::startAnalyticsSession() {
+    std::lock_guard<std::mutex> lock(analyticsSessionMtx);
+    analyticsSessionId = generateAnalyticsSessionId();
+}
+
+void DeviceBase::endAnalyticsSession() {
+    std::lock_guard<std::mutex> lock(analyticsSessionMtx);
+    analyticsSessionId.clear();
+}
+
+std::string DeviceBase::getAnalyticsSessionId() const {
+    std::lock_guard<std::mutex> lock(analyticsSessionMtx);
+
+    if(analyticsSessionId.empty()) {
+        analyticsSessionId = generateAnalyticsSessionId();
+    }
+
+    return analyticsSessionId;
 }
 
 std::string DeviceBase::fetchAnonymousAnalyticsId() {
@@ -600,6 +658,7 @@ void DeviceBase::startAnalyticsLifecycle(bool reconnect) {
     analyticsCreatedAt = std::chrono::steady_clock::now();
     fetchAnonymousAnalyticsId();
     analyticsLifecycleStarted = true;
+    startAnalyticsSession();
     emitDeviceAnalyticsEvent("device_constructor");
 
     analyticsEventRunning = true;
@@ -625,6 +684,7 @@ void DeviceBase::stopAnalyticsLifecycle() {
 
     const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - analyticsCreatedAt).count();
     emitDeviceAnalyticsEvent("device_destructor", nlohmann::json{{"duration_ms", durationMs}});
+    endAnalyticsSession();
     analyticsLifecycleStarted = false;
 }
 

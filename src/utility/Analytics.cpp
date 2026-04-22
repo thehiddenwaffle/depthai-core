@@ -104,19 +104,6 @@ std::filesystem::path defaultStorageDir() {
     return homeDirectory() / ".depthai" / "posthog";
 }
 
-std::string randomAlphaNumeric(std::size_t length) {
-    static std::mt19937_64 generator(std::random_device{}());
-    static const std::string alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    static std::uniform_int_distribution<std::size_t> distribution(0, alphabet.size() - 1);
-
-    std::string result;
-    result.reserve(length);
-    for(std::size_t i = 0; i < length; ++i) {
-        result.push_back(alphabet[distribution(generator)]);
-    }
-    return result;
-}
-
 std::string generateUuidV4() {
     static std::mt19937_64 generator(std::random_device{}());
     static std::uniform_int_distribution<int> distribution(0, 255);
@@ -127,6 +114,38 @@ std::string generateUuidV4() {
     }
 
     bytes[6] = static_cast<std::uint8_t>((bytes[6] & 0x0F) | 0x40);
+    bytes[8] = static_cast<std::uint8_t>((bytes[8] & 0x3F) | 0x80);
+
+    std::ostringstream stream;
+    stream << std::hex << std::setfill('0');
+    for(std::size_t index = 0; index < bytes.size(); ++index) {
+        stream << std::setw(2) << static_cast<int>(bytes[index]);
+        if(index == 3 || index == 5 || index == 7 || index == 9) {
+            stream << '-';
+        }
+    }
+    return stream.str();
+}
+
+std::string generateUuidV7() {
+    static std::mt19937_64 generator(std::random_device{}());
+    static std::uniform_int_distribution<int> distribution(0, 255);
+
+    std::array<std::uint8_t, 16> bytes{};
+    const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
+
+    bytes[0] = static_cast<std::uint8_t>((nowMs >> 40) & 0xFF);
+    bytes[1] = static_cast<std::uint8_t>((nowMs >> 32) & 0xFF);
+    bytes[2] = static_cast<std::uint8_t>((nowMs >> 24) & 0xFF);
+    bytes[3] = static_cast<std::uint8_t>((nowMs >> 16) & 0xFF);
+    bytes[4] = static_cast<std::uint8_t>((nowMs >> 8) & 0xFF);
+    bytes[5] = static_cast<std::uint8_t>(nowMs & 0xFF);
+
+    for(std::size_t index = 6; index < bytes.size(); ++index) {
+        bytes[index] = static_cast<std::uint8_t>(distribution(generator));
+    }
+
+    bytes[6] = static_cast<std::uint8_t>((bytes[6] & 0x0F) | 0x70);
     bytes[8] = static_cast<std::uint8_t>((bytes[8] & 0x3F) | 0x80);
 
     std::ostringstream stream;
@@ -236,7 +255,7 @@ struct AnalyticsSharedState {
     std::string apiKey;
     std::string host;
     std::string distinctId;
-    std::string sessionKey{randomAlphaNumeric(32)};
+    std::string sessionKey{generateUuidV7()};
 
     std::filesystem::path queueDir;
 
@@ -351,7 +370,9 @@ void AnalyticsSharedState::event(std::string eventName, nlohmann::json propertie
     if(!properties.contains("$lib_version")) {
         properties["$lib_version"] = build::VERSION;
     }
-    properties["$session_id"] = sessionKey;
+    if(!properties.contains("$session_id")) {
+        properties["$session_id"] = sessionKey;
+    }
 
     const auto payload = nlohmann::json{
         {"event", eventName},

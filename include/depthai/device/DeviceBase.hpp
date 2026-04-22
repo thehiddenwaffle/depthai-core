@@ -1048,6 +1048,9 @@ class DeviceBase {
     std::string fetchAnonymousAnalyticsId();
     void analyticsEventLoop();
     void analyticsPingLoop();
+    void startAnalyticsSession();
+    void endAnalyticsSession();
+    std::string getAnalyticsSessionId() const;
     struct PrevInfo {
         DeviceInfo deviceInfo;
         Config cfg;
@@ -1123,6 +1126,8 @@ class DeviceBase {
     std::condition_variable analyticsPingCondVar;
     std::mutex analyticsPingMtx;
     std::string anonymousAnalyticsId;
+    mutable std::mutex analyticsSessionMtx;
+    mutable std::string analyticsSessionId;
     std::chrono::steady_clock::time_point analyticsCreatedAt;
     bool analyticsLifecycleStarted = false;
 
