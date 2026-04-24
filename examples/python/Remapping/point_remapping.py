@@ -61,7 +61,10 @@ if __name__ == "__main__":
     monoRight = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
     monoLeftOut = monoLeft.requestFullResolutionOutput()
     monoRightOut = monoRight.requestFullResolutionOutput()
-    stereo = pipeline.create(dai.node.StereoDepth).build(monoLeftOut, monoRightOut)
+    stereo = pipeline.create(dai.node.StereoDepth)
+    monoLeftOut.link(stereo.left)
+    monoRightOut.link(stereo.right)
+    stereo.initialConfig.setDepthAlign(dai.StereoDepthConfig.AlgorithmControl.DepthAlign.RECTIFIED_LEFT)
 
     rgbOut = rgb.requestOutput((720, 480), enableUndistortion=False, resizeMode=dai.ImgResizeMode.CROP)
     rgbQueue = rgbOut.createOutputQueue()

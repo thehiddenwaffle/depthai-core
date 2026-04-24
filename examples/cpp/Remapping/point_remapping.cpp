@@ -111,7 +111,9 @@ int main() {
 
     auto monoLeftOut = monoLeft->requestFullResolutionOutput();
     auto monoRightOut = monoRight->requestFullResolutionOutput();
-    auto stereo = pipeline.create<dai::node::StereoDepth>()->build(*monoLeftOut, *monoRightOut);
+    auto stereo = pipeline.create<dai::node::StereoDepth>();
+    monoLeftOut->link(stereo->left);
+    monoRightOut->link(stereo->right);
 
     auto rgbOut = rgb->requestOutput({720, 480}, std::nullopt, dai::ImgResizeMode::CROP, std::nullopt, false);
     auto rgbQueue = rgbOut->createOutputQueue();
