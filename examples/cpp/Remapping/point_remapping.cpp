@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <csignal>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -15,7 +17,12 @@
 const std::string SOURCE_WINDOW = "Source window CAM_B";
 const std::string RGB_WINDOW = "RGB window CAM_A";
 
+std::atomic<bool> quitEvent(false);
 std::optional<cv::Point> selectedPoint = std::nullopt;
+
+void signalHandler(int) {
+    quitEvent = true;
+}
 
 void onLeftClick(int event, int x, int y, int flags, void* param) {
     (void)flags;
@@ -103,6 +110,9 @@ std::string formatPointStatus(const std::string& prefix, const dai::Point2f& poi
 }
 
 int main() {
+    signal(SIGTERM, signalHandler);
+    signal(SIGINT, signalHandler);
+
     dai::Pipeline pipeline;
 
     auto rgb = pipeline.create<dai::node::Camera>()->build(dai::CameraBoardSocket::CAM_A);
@@ -125,7 +135,7 @@ int main() {
     cv::setMouseCallback(SOURCE_WINDOW, onLeftClick);
 
     pipeline.start();
-    while(pipeline.isRunning()) {
+    while(pipeline.isRunning() && !quitEvent) {
         auto rgbFrame = rgbQueue->get<dai::ImgFrame>();
         auto depthFrame = depthQueue->get<dai::ImgFrame>();
         auto rectifiedLeft = rectifiedLeftQueue->get<dai::ImgFrame>();
@@ -193,6 +203,7 @@ int main() {
         }
     }
 
+    pipeline.stop();
     pipeline.wait();
     return 0;
 }
