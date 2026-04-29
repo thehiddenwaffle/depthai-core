@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
@@ -208,6 +209,11 @@ class ImgFrame : public Buffer, public ProtoSerializable {
      * Retrieves sensor FPS for this frame.
      */
     float getFps() const;
+
+    /**
+     * Retrieves sensor temperature in degrees Celsius. Returns NaN if not available.
+     */
+    float getSensorTemperature() const;
 
     /**
      * Retrieves image transformation data
@@ -739,8 +745,9 @@ class ImgFrame : public Buffer, public ProtoSerializable {
         Fsync fsync = Fsync::NONE;
         int32_t sensorMode = -1;
         float fps = -1.0f;
+        float sensorTemperatureC = std::numeric_limits<float>::quiet_NaN();
 
-        DEPTHAI_SERIALIZE(CameraSettings, exposureTimeUs, sensitivityIso, lensPosition, wbColorTemp, lensPositionRaw, fsync, sensorMode, fps);
+        DEPTHAI_SERIALIZE(CameraSettings, exposureTimeUs, sensitivityIso, lensPosition, wbColorTemp, lensPositionRaw, fsync, sensorMode, fps, sensorTemperatureC);
     };
 
     Specs fb = {};

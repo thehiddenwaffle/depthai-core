@@ -49,6 +49,9 @@ int EncodedFrame::getSensorMode() const {
 float EncodedFrame::getFps() const {
     return cam.fps;
 }
+float EncodedFrame::getSensorTemperature() const {
+    return cam.sensorTemperatureC;
+}
 unsigned int EncodedFrame::getQuality() const {
     return quality;
 }
