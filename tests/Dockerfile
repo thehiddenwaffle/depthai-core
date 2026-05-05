@@ -6,8 +6,14 @@ ENV LC_ALL=en_US.UTF-8
 ENV DISPLAY=:99
 ARG FLAVOR=vanilla
 ENV FLAVOR=${FLAVOR}
+ARG REPLAY_ENABLED=false
+ENV REPLAY_ENABLED=${REPLAY_ENABLED}
 ARG PARALLEL_JOBS=8
 ARG PULL_REQUEST="false"
+
+ENV VCPKG_DOWNLOADS=/opt/vcpkg-downloads
+ENV VCPKG_DEFAULT_BINARY_CACHE=/opt/vcpkg-bincache
+ENV VCPKG_BINARY_SOURCES="clear;files,/opt/vcpkg-bincache,readwrite"
 
 # Update and install all required packages in one go
 RUN apt-get update && \
@@ -67,15 +73,7 @@ RUN apt-get update && \
 
 RUN locale-gen en_US.UTF-8
 
-# Set workdir to your project directory
 WORKDIR /workspace
-
-ENV VCPKG_DOWNLOADS=/opt/vcpkg-downloads
-#Bootleg solution for ftp.gnu.org not working - will try caching downloads later
-RUN mkdir -p /opt/vcpkg-downloads && \
-    curl -fL https://mirrors.kernel.org/gnu/gperf/gperf-3.1.tar.gz \
-      -o /opt/vcpkg-downloads/gperf-3.1.tar.gz
-
 
 # Copy project files
 ARG BRANCH=develop
@@ -97,27 +95,41 @@ RUN if [ "$PULL_REQUEST" = "false" ]; then \
 RUN python3 -m venv venv && \
     . venv/bin/activate && \
     pip install --upgrade pip && \
-    pip install numpy pytest pytest-html
+    pip install numpy pytest pytest-html && \
+    pip install adbutils==2.12.0
 
 ENV PATH="/workspace/venv/bin:$PATH"
 
-# Set toolchain path only if flavor != vanilla
-RUN if [ "$FLAVOR" != "vanilla" ]; then \
-        export CMAKE_TOOLCHAIN_PATH=/workspace/cmake/toolchain/${FLAVOR}.cmake && \
-        echo "Using toolchain: $CMAKE_TOOLCHAIN_PATH"; \
+RUN --mount=type=cache,target=/opt/vcpkg-downloads \
+    curl -fL --retry 5 --retry-delay 2 \
+      https://mirrors.kernel.org/gnu/gperf/gperf-3.1.tar.gz \
+      -o /opt/vcpkg-downloads/gperf-3.1.tar.gz
+
+RUN --mount=type=cache,target=/opt/vcpkg-downloads \
+    --mount=type=cache,target=/opt/vcpkg-bincache \
+    if [ "$FLAVOR" != "vanilla" ] && [ "$FLAVOR" != "tsan" ]; then \
+        export CMAKE_TOOLCHAIN_FILE=/workspace/cmake/toolchain/${FLAVOR}.cmake && \
+        echo "Using toolchain: $CMAKE_TOOLCHAIN_FILE"; \
     else \
         echo "Using vanilla flavor (no toolchain)"; \
+    fi && \
+    REPLAY_CMAKE_ARG="" && \
+    if [ "$REPLAY_ENABLED" = "true" ]; then \
+        REPLAY_CMAKE_ARG="-DDEPTHAI_TESTS_ENABLE_REPLAY=ON"; \
+        echo "Enabling DEPTHAI_REPLAY for all tests"; \
     fi && \
     cmake -S . -B build \
         -D CMAKE_BUILD_TYPE=Release \
         -D DEPTHAI_VCPKG_INTERNAL_ONLY=OFF \
         -D VCPKG_OVERLAY_TRIPLETS="/workspace/cmake/triplets/release" \
         -D DEPTHAI_BUILD_TESTS=ON \
+        ${REPLAY_CMAKE_ARG} \
         $(if [ "$PULL_REQUEST" = "false" ]; then echo "-D DEPTHAI_BUILD_EXAMPLES=ON \
         -D DEPTHAI_TEST_EXAMPLES=ON \
         -D DEPTHAI_BUILD_PYTHON=ON \
         -D DEPTHAI_PYTHON_TEST_EXAMPLES=ON \
         -D DEPTHAI_PYTHON_ENABLE_EXAMPLES=ON"; fi)
 
-
-RUN cmake --build build --parallel $PARALLEL_JOBS --config Release
+RUN --mount=type=cache,target=/opt/vcpkg-downloads \
+    --mount=type=cache,target=/opt/vcpkg-bincache \
+    cmake --build build --parallel $PARALLEL_JOBS --config Release

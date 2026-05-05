@@ -1,5 +1,6 @@
 #pragma once
 
+#include <depthai/common/DepthUnit.hpp>
 #include <depthai/common/ProcessorType.hpp>
 #include <depthai/common/optional.hpp>
 #include <vector>
@@ -26,17 +27,14 @@ class StereoDepthConfig : public Buffer {
         /**
          * Align the disparity/depth to the perspective of a rectified output, or center it
          */
-        enum class DepthAlign : int32_t { RECTIFIED_RIGHT, RECTIFIED_LEFT, CENTER };
+        enum class DepthAlign : int32_t { AUTO, RECTIFIED_RIGHT, RECTIFIED_LEFT, CENTER, RIGHT, LEFT };
 
-        /**
-         * Measurement unit for depth data
-         */
-        enum class DepthUnit : int32_t { METER, CENTIMETER, MILLIMETER, INCH, FOOT, CUSTOM };
+        using DepthUnit = dai::DepthUnit;
 
         /**
          * Set the disparity/depth alignment to the perspective of a rectified output, or center it
          */
-        DepthAlign depthAlign = DepthAlign::RECTIFIED_LEFT;
+        DepthAlign depthAlign = DepthAlign::AUTO;
 
         /**
          * Measurement unit for depth data.
@@ -105,7 +103,7 @@ class StereoDepthConfig : public Buffer {
          * from camera extrinsics when depth alignment to camera is enabled.
          * Center alignment is achieved by shifting the obtained disparity map by a scale factor.
          * It's used to align to a different camera that is on the same horizontal baseline as the two stereo cameras.
-         * E.g. if we have a device with 10 cm stereo baseline, and we have another camera inbetween,
+         * E.g. if we have a device with 10 cm stereo baseline, and we have another camera in between,
          * 9cm from the LEFT camera and 1 cm from the RIGHT camera we can align the obtained disparity map using a scale factor of 0.9.
          * Note that aligning disparity map to a different camera involves 2 steps:
          * 1. Shifting obtained disparity map.
@@ -748,6 +746,16 @@ class StereoDepthConfig : public Buffer {
      * Get depth unit of depth map.
      */
     AlgorithmControl::DepthUnit getDepthUnit();
+
+    /**
+     * Set custom depth unit multiplier relative to 1 meter.
+     */
+    StereoDepthConfig& setCustomDepthUnitMultiplier(float multiplier);
+
+    /**
+     * Get custom depth unit multiplier relative to 1 meter.
+     */
+    float getCustomDepthUnitMultiplier() const;
 
     /**
      * Shift input frame by a number of pixels to increase minimum depth.

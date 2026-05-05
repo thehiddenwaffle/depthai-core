@@ -62,6 +62,15 @@ class DynamicCalibration : public DeviceNodeCRTP<DeviceNode, DynamicCalibration,
 	}
     };
 
+    Output metricsOutput{
+        *this,
+	{
+	    "metricsOutput",
+	    DEFAULT_GROUP,
+	    {{{DatatypeEnum::CalibrationMetrics, false}}}
+	}
+    };
+
     Output coverageOutput{
         *this,
 	{
@@ -144,8 +153,9 @@ class DynamicCalibration : public DeviceNodeCRTP<DeviceNode, DynamicCalibration,
 
     ErrorCode runCalibration(const dai::CalibrationHandler& calibHandler, const bool force = false);
 
+#ifdef DEPTHAI_HAVE_OPENCV_SUPPORT
     ErrorCode runLoadImage(const bool blocking = false);
-
+#endif
     ErrorCode computeCoverage();
 
     ErrorCode initializePipeline(const std::shared_ptr<dai::Device> daiDevice);
@@ -153,6 +163,9 @@ class DynamicCalibration : public DeviceNodeCRTP<DeviceNode, DynamicCalibration,
     ErrorCode doWork(std::chrono::steady_clock::time_point& previousLoadingAndCalibrationTime);
 
     ErrorCode evaluateCommand(const std::shared_ptr<DynamicCalibrationControl>& control);
+
+    void computeMetrics(const CalibrationHandler& handler);
+
     /**
      * From dai::CalibrationHandler data convert to DCL dcl::CameraCalibrationHandle, which includes all necesarry data for calibration
      * @return dcl::CameraCalibrationHanlder
@@ -160,9 +173,7 @@ class DynamicCalibration : public DeviceNodeCRTP<DeviceNode, DynamicCalibration,
     /**
      * Overwrites the internal calibration of DCL with new Calibration data provided by node.
      */
-    // clang-format off
-    void setCalibration(CalibrationHandler& handler);
-    // clang-format on
+    void setCalibration(CalibrationHandler& handler, bool flash);
 
     /**
      * DAI held properties
@@ -190,12 +201,12 @@ class DynamicCalibration : public DeviceNodeCRTP<DeviceNode, DynamicCalibration,
     bool slept = false;
 
     /**
-     * Calibration state machine, which holds the state of Node and provide stabile enviroment;
+     * Calibration state machine, which holds the state of Node and provides a stable environment;
      * - Initialization of pipeline,
      * - Loading images in DCL,
      * - Starting Calibration Check,
      * - Starting of Calibration
-     * - Reseting of data
+     * - Resetting of data
      */
     bool runOnHostVar = true;
 

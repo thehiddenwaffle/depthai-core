@@ -26,6 +26,7 @@ struct DetectionParserOptions {
     bool decodeKeypoints = false;
     bool decodeSegmentation = false;
 
+    // TODO (aljazkonec1): instead of listing every parser property separately, add serialization support to dai::nn_archive::v1::Head and pass the entire head
     int classes;
     std::optional<std::vector<std::string>> classNames;
     int coordinates;
@@ -37,7 +38,8 @@ struct DetectionParserOptions {
     /// see YoloDetectionNetwork::setAnchors() for format
     std::vector<std::vector<std::vector<float>>> anchorsV2;
     float iouThreshold;
-    std::vector<dai::Edge> keypointEdges;
+    std::vector<dai::Edge> keypointEdges = {};
+    std::vector<std::string> keypointLabelNames = {};
 };
 
 DEPTHAI_SERIALIZE_EXT(DetectionParserOptions,
@@ -57,6 +59,7 @@ DEPTHAI_SERIALIZE_EXT(DetectionParserOptions,
                       outputNamesToUse,
                       anchorsV2,
                       iouThreshold,
-                      keypointEdges);
+                      keypointEdges,
+                      keypointLabelNames);
 
 }  // namespace dai

@@ -1,12 +1,16 @@
 #pragma once
 
 // std
+#include <condition_variable>
 #include <memory>
+#include <utility>
 #include <vector>
 
 // project
 #include "depthai/pipeline/datatype/ADatatype.hpp"
 #include "depthai/utility/LockingQueue.hpp"
+#include "depthai/utility/PipelineEventDispatcherInterface.hpp"
+#include "depthai/utility/WaitAnyNotifier.hpp"
 
 // shared
 namespace dai {
@@ -30,6 +34,10 @@ class MessageQueue : public std::enable_shared_from_this<MessageQueue> {
     LockingQueue<std::shared_ptr<ADatatype>> queue;
     std::string name;
 
+    std::mutex notifierMtx;
+    std::unordered_map<CallbackId, std::shared_ptr<utility::WaitAnyNotifier>> notifiers;
+    CallbackId uniqueNotifierId{0};
+
    public:
     std::mutex callbacksMtx;                                                                                 // Only public for the Python bindings
     std::unordered_map<CallbackId, std::function<void(std::string, std::shared_ptr<ADatatype>)>> callbacks;  // Only public for the Python bindings
@@ -37,26 +45,38 @@ class MessageQueue : public std::enable_shared_from_this<MessageQueue> {
 
    private:
     void callCallbacks(std::shared_ptr<ADatatype> msg);
+    void notifyListeners();
+    utility::PipelineEventDispatcherInterface* pipelineEventDispatcher = nullptr;
 
    public:
     // DataOutputQueue constructor
     explicit MessageQueue(unsigned int maxSize = 16, bool blocking = true);
-    explicit MessageQueue(std::string name, unsigned int maxSize = 16, bool blocking = true);
+    explicit MessageQueue(std::string name,
+                          unsigned int maxSize = 16,
+                          bool blocking = true,
+                          utility::PipelineEventDispatcherInterface* pipelineEventDispatcher = nullptr);
 
     MessageQueue(const MessageQueue& c)
-        : enable_shared_from_this(c), queue(c.queue), name(c.name), callbacks(c.callbacks), uniqueCallbackId(c.uniqueCallbackId){};
+        : enable_shared_from_this(c),
+          queue(c.queue),
+          name(c.name),
+          callbacks(c.callbacks),
+          uniqueCallbackId(c.uniqueCallbackId),
+          pipelineEventDispatcher(c.pipelineEventDispatcher){};
     MessageQueue(MessageQueue&& m) noexcept
         : enable_shared_from_this(m),
           queue(std::move(m.queue)),
           name(std::move(m.name)),
           callbacks(std::move(m.callbacks)),
-          uniqueCallbackId(m.uniqueCallbackId){};
+          uniqueCallbackId(m.uniqueCallbackId),
+          pipelineEventDispatcher(m.pipelineEventDispatcher){};
 
     MessageQueue& operator=(const MessageQueue& c) {
         queue = c.queue;
         name = c.name;
         callbacks = c.callbacks;
         uniqueCallbackId = c.uniqueCallbackId;
+        pipelineEventDispatcher = c.pipelineEventDispatcher;
         return *this;
     }
 
@@ -64,8 +84,53 @@ class MessageQueue : public std::enable_shared_from_this<MessageQueue> {
         queue = std::move(m.queue);
         name = std::move(m.name);
         callbacks = std::move(m.callbacks);
+        notifiers = std::move(m.notifiers);
         uniqueCallbackId = m.uniqueCallbackId;
+        uniqueNotifierId = m.uniqueNotifierId;
+        pipelineEventDispatcher = m.pipelineEventDispatcher;
         return *this;
+    }
+
+    /**
+     * Blocks until any of the queues contains a message, all queues are closed, or the timeout expires
+     *
+     * @param queues Queues to wait on
+     * @param timeout Maximum time to wait, or no timeout if not specified
+     * @returns True if at least one queue has a message available, false if all queues are closed or the timeout expires first
+     */
+    static bool waitAny(const std::vector<std::reference_wrapper<MessageQueue>>& queues, std::optional<std::chrono::milliseconds> timeout = std::nullopt);
+
+    /**
+     * Waits for messages on any of the provided queues and returns all currently available messages
+     *
+     * @param queues Mapping from output keys to queues to read from
+     * @param timeout Maximum time to wait, or no timeout if not specified
+     * @returns Mapping containing one available message per queue key, or an empty map if all queues are closed or the timeout expires first
+     */
+    static std::unordered_map<std::string, std::shared_ptr<ADatatype>> getAny(const std::unordered_map<std::string, MessageQueue&>& queues,
+                                                                              std::optional<std::chrono::milliseconds> timeout = std::nullopt);
+    template <typename T>
+
+    /**
+     * Waits for messages on any of the provided queues and returns all currently available messages cast to the requested type
+     *
+     * @tparam T Requested message type
+     * @param queues Mapping from output keys to queues to read from
+     * @param timeout Maximum time to wait, or no timeout if not specified
+     * @returns Mapping containing one available message per queue key that can be cast to `T`, or an empty map if all queues are closed, the timeout expires
+     * first, or no available messages match `T`
+     */
+    static std::unordered_map<std::string, std::shared_ptr<T>> getAny(const std::unordered_map<std::string, MessageQueue&>& queues,
+                                                                      std::optional<std::chrono::milliseconds> timeout = std::nullopt) {
+        auto resultADatatype = getAny(queues, timeout);
+        std::unordered_map<std::string, std::shared_ptr<T>> result;
+        for(auto& [k, v] : resultADatatype) {
+            auto casted = std::dynamic_pointer_cast<T>(v);
+            if(casted) {
+                result[k] = casted;
+            }
+        }
+        return result;
     }
 
     virtual ~MessageQueue();
@@ -158,12 +223,28 @@ class MessageQueue : public std::enable_shared_from_this<MessageQueue> {
     CallbackId addCallback(const std::function<void()>& callback);
 
     /**
+     * Adds a notifier to be pinged on message queue updates
+     *
+     * @param notifier Notifier to be notified
+     * @returns Notifier id
+     */
+    CallbackId addNotifier(std::shared_ptr<utility::WaitAnyNotifier> notifier);
+
+    /**
      * Removes a callback
      *
      * @param callbackId Id of callback to be removed
      * @returns True if callback was removed, false otherwise
      */
     bool removeCallback(CallbackId callbackId);
+
+    /**
+     * Removes a notifier
+     *
+     * @param notifierId Id of notifier to be removed
+     * @returns True if notifier was removed, false otherwise
+     */
+    bool removeNotifier(CallbackId notifierId);
 
     /**
      * Check whether front of the queue has message of type T
@@ -199,9 +280,24 @@ class MessageQueue : public std::enable_shared_from_this<MessageQueue> {
         if(queue.isDestroyed()) {
             throw QueueException(CLOSED_QUEUE_MESSAGE);
         }
-        std::shared_ptr<ADatatype> val = nullptr;
-        if(!queue.tryPop(val)) return nullptr;
-        return std::dynamic_pointer_cast<T>(val);
+        auto getInput = [this]() -> std::shared_ptr<T> {
+            std::shared_ptr<ADatatype> val = nullptr;
+            if(!this->queue.tryPop(val)) {
+                return nullptr;
+            }
+            return std::dynamic_pointer_cast<T>(val);
+        };
+        if(pipelineEventDispatcher && pipelineEventDispatcher->sendEvents) {
+            auto blockEvent = pipelineEventDispatcher->blockEvent(PipelineEvent::Type::INPUT, name);
+            auto result = getInput();
+            blockEvent.setQueueSize(getSize());
+            if(!result) {
+                blockEvent.cancel();
+            }
+            return result;
+        } else {
+            return getInput();
+        }
     }
 
     /**
@@ -221,8 +317,17 @@ class MessageQueue : public std::enable_shared_from_this<MessageQueue> {
     template <class T>
     std::shared_ptr<T> get() {
         std::shared_ptr<ADatatype> val = nullptr;
-        if(!queue.waitAndPop(val)) {
-            throw QueueException(CLOSED_QUEUE_MESSAGE);
+        auto getInput = [this, &val]() {
+            if(!this->queue.waitAndPop(val)) {
+                throw QueueException(CLOSED_QUEUE_MESSAGE);
+            }
+        };
+        if(pipelineEventDispatcher && pipelineEventDispatcher->sendEvents) {
+            auto blockEvent = pipelineEventDispatcher->blockEvent(PipelineEvent::Type::INPUT, name);
+            getInput();
+            blockEvent.setQueueSize(getSize());
+        } else {
+            getInput();
         }
         return std::dynamic_pointer_cast<T>(val);
     }
@@ -272,17 +377,30 @@ class MessageQueue : public std::enable_shared_from_this<MessageQueue> {
         if(queue.isDestroyed()) {
             throw QueueException(CLOSED_QUEUE_MESSAGE);
         }
-        std::shared_ptr<ADatatype> val = nullptr;
-        if(!queue.tryWaitAndPop(val, timeout)) {
-            hasTimedout = true;
-            // Check again after the timeout
-            if(queue.isDestroyed()) {
-                throw QueueException(CLOSED_QUEUE_MESSAGE);
+        auto getInput = [&, this]() -> std::shared_ptr<T> {
+            std::shared_ptr<ADatatype> val = nullptr;
+            if(!this->queue.tryWaitAndPop(val, timeout)) {
+                hasTimedout = true;
+                // Check again after the timeout
+                if(this->queue.isDestroyed()) {
+                    throw QueueException(CLOSED_QUEUE_MESSAGE);
+                }
+                return nullptr;
             }
-            return nullptr;
+            hasTimedout = false;
+            return std::dynamic_pointer_cast<T>(val);
+        };
+        if(pipelineEventDispatcher && pipelineEventDispatcher->sendEvents) {
+            auto blockEvent = pipelineEventDispatcher->blockEvent(PipelineEvent::Type::INPUT, name);
+            auto result = getInput();
+            blockEvent.setQueueSize(getSize());
+            if(!result || hasTimedout) {
+                blockEvent.cancel();
+            }
+            return result;
+        } else {
+            return getInput();
         }
-        hasTimedout = false;
-        return std::dynamic_pointer_cast<T>(val);
     }
 
     /**
@@ -307,13 +425,26 @@ class MessageQueue : public std::enable_shared_from_this<MessageQueue> {
         if(queue.isDestroyed()) {
             throw QueueException(CLOSED_QUEUE_MESSAGE);
         }
-        std::vector<std::shared_ptr<T>> messages;
-        queue.consumeAll([&messages](std::shared_ptr<ADatatype>& msg) {
-            // dynamic pointer cast may return nullptr
-            // in which case that message in vector will be nullptr
-            messages.push_back(std::dynamic_pointer_cast<T>(std::move(msg)));
-        });
-        return messages;
+        auto getInput = [this]() -> std::vector<std::shared_ptr<T>> {
+            std::vector<std::shared_ptr<T>> messages;
+            this->queue.consumeAll([&messages](std::shared_ptr<ADatatype>& msg) {
+                // dynamic pointer cast may return nullptr
+                // in which case that message in vector will be nullptr
+                messages.push_back(std::dynamic_pointer_cast<T>(std::move(msg)));
+            });
+            return messages;
+        };
+        if(pipelineEventDispatcher && pipelineEventDispatcher->sendEvents) {
+            auto blockEvent = pipelineEventDispatcher->blockEvent(PipelineEvent::Type::INPUT, name);
+            auto result = getInput();
+            blockEvent.setQueueSize(getSize());
+            if(result.empty()) {
+                blockEvent.cancel();
+            }
+            return result;
+        } else {
+            return getInput();
+        }
     }
 
     /**
@@ -334,13 +465,22 @@ class MessageQueue : public std::enable_shared_from_this<MessageQueue> {
     template <class T>
     std::vector<std::shared_ptr<T>> getAll() {
         std::vector<std::shared_ptr<T>> messages;
-        bool notDestructed = queue.waitAndConsumeAll([&messages](std::shared_ptr<ADatatype>& msg) {
-            // dynamic pointer cast may return nullptr
-            // in which case that message in vector will be nullptr
-            messages.push_back(std::dynamic_pointer_cast<T>(std::move(msg)));
-        });
-        if(!notDestructed) {
-            throw QueueException(CLOSED_QUEUE_MESSAGE);
+        auto getInput = [this, &messages]() {
+            bool notDestructed = this->queue.waitAndConsumeAll([&messages](std::shared_ptr<ADatatype>& msg) {
+                // dynamic pointer cast may return nullptr
+                // in which case that message in vector will be nullptr
+                messages.push_back(std::dynamic_pointer_cast<T>(std::move(msg)));
+            });
+            if(!notDestructed) {
+                throw QueueException(CLOSED_QUEUE_MESSAGE);
+            }
+        };
+        if(pipelineEventDispatcher && pipelineEventDispatcher->sendEvents) {
+            auto blockEvent = pipelineEventDispatcher->blockEvent(PipelineEvent::Type::INPUT, name);
+            getInput();
+            blockEvent.setQueueSize(getSize());
+        } else {
+            getInput();
         }
         return messages;
     }
@@ -367,16 +507,29 @@ class MessageQueue : public std::enable_shared_from_this<MessageQueue> {
         if(queue.isDestroyed()) {
             throw QueueException(CLOSED_QUEUE_MESSAGE);
         }
-        std::vector<std::shared_ptr<T>> messages;
-        hasTimedout = !queue.waitAndConsumeAll(
-            [&messages](std::shared_ptr<ADatatype>& msg) {
-                // dynamic pointer cast may return nullptr
-                // in which case that message in vector will be nullptr
-                messages.push_back(std::dynamic_pointer_cast<T>(std::move(msg)));
-            },
-            timeout);
+        auto getInput = [&, this]() -> std::vector<std::shared_ptr<T>> {
+            std::vector<std::shared_ptr<T>> messages;
+            hasTimedout = !this->queue.waitAndConsumeAll(
+                [&messages](std::shared_ptr<ADatatype>& msg) {
+                    // dynamic pointer cast may return nullptr
+                    // in which case that message in vector will be nullptr
+                    messages.push_back(std::dynamic_pointer_cast<T>(std::move(msg)));
+                },
+                timeout);
 
-        return messages;
+            return messages;
+        };
+        if(pipelineEventDispatcher && pipelineEventDispatcher->sendEvents) {
+            auto blockEvent = pipelineEventDispatcher->blockEvent(PipelineEvent::Type::INPUT, name);
+            auto result = getInput();
+            blockEvent.setQueueSize(getSize());
+            if(result.empty() || hasTimedout) {
+                blockEvent.cancel();
+            }
+            return result;
+        } else {
+            return getInput();
+        }
     }
 
     /**

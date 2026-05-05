@@ -30,6 +30,7 @@ class ImgFrame : public Buffer, public ProtoSerializable {
    public:
     using Buffer::getTimestamp;
     using Buffer::getTimestampDevice;
+    enum class Fsync : int32_t { NONE = 0, INPUT, OUTPUT, PTP };
     enum class Type {
         YUV422i,    // interleaved 8 bit
         YUV444p,    // planar 4:4:4 format
@@ -194,6 +195,26 @@ class ImgFrame : public Buffer, public ProtoSerializable {
     float getLensPositionRaw() const;
 
     /**
+     * Retrieves effective frame sync mode for this frame.
+     */
+    Fsync getFsync() const;
+
+    /**
+     * Retrieves selected sensor mode index for this frame.
+     */
+    int getSensorMode() const;
+
+    /**
+     * Retrieves sensor FPS for this frame.
+     */
+    float getFps() const;
+
+    /**
+     * Retrieves image transformation data
+     */
+    ImgTransformation& getTransformation();
+
+    /**
      * Instance number relates to the origin of the frame (which camera)
      *
      * @param instance Instance number
@@ -262,6 +283,13 @@ class ImgFrame : public Buffer, public ProtoSerializable {
      * @param type Type of image
      */
     ImgFrame& setType(Type type);
+
+    /**
+     * Specifies image transformation data
+     *
+     * @param transformation transformation data
+     */
+    ImgFrame& setTransformation(const ImgTransformation& transformation);
 
     /**
      * Remap a point from the current frame to the source frame
@@ -414,7 +442,8 @@ class ImgFrame : public Buffer, public ProtoSerializable {
      *
      * Copies cv::Mat data to the ImgFrame buffer and converts to a specific type.
      *
-     * @param frame Input cv::Mat BGR frame from which to copy the data
+     * @param frame Input cv::Mat BGR frame or single channel frame from which to copy the data from.
+     * @param type  Specifies the target image format for the internal buffer, including color space, layout, and bit depth.
      */
     ImgFrame& setCvFrame(cv::Mat frame, Type type);
 
@@ -702,13 +731,16 @@ class ImgFrame : public Buffer, public ProtoSerializable {
         DEPTHAI_SERIALIZE(Specs, type, width, height, stride, bytesPP, p1Offset, p2Offset, p3Offset);
     };
     struct CameraSettings {
-        int32_t exposureTimeUs;
-        int32_t sensitivityIso;
-        int32_t lensPosition;
-        int32_t wbColorTemp;
-        float lensPositionRaw;
+        int32_t exposureTimeUs = 0;
+        int32_t sensitivityIso = 0;
+        int32_t lensPosition = 0;
+        int32_t wbColorTemp = 0;
+        float lensPositionRaw = 0.0f;
+        Fsync fsync = Fsync::NONE;
+        int32_t sensorMode = -1;
+        float fps = -1.0f;
 
-        DEPTHAI_SERIALIZE(CameraSettings, exposureTimeUs, sensitivityIso, lensPosition, wbColorTemp, lensPositionRaw);
+        DEPTHAI_SERIALIZE(CameraSettings, exposureTimeUs, sensitivityIso, lensPosition, wbColorTemp, lensPositionRaw, fsync, sensorMode, fps);
     };
 
     Specs fb = {};

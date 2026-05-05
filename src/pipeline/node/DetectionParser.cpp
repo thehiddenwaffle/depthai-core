@@ -2,17 +2,21 @@
 
 #include <algorithm>
 #include <cctype>
+#include <csignal>
 #include <cstddef>
 #include <memory>
 #include <vector>
 
 #include "common/DetectionNetworkType.hpp"
+#include "common/DetectionParserOptions.hpp"
 #include "common/ModelType.hpp"
 #include "common/YoloDecodingFamily.hpp"
-#include "depthai/modelzoo/Zoo.hpp"
 #include "nn_archive/NNArchive.hpp"
 #include "nn_archive/v1/Head.hpp"
+#include "nn_archive/v1/Metadata.hpp"
 #include "pipeline/ThreadedNodeImpl.hpp"
+#include "pipeline/datatype/NNData.hpp"
+#include "pipeline/utilities/DetectionParser/DetectionParserUtils.hpp"
 
 // internal headers
 #include "utility/ErrorMacros.hpp"
@@ -68,6 +72,82 @@ const NNArchiveVersionedConfig& DetectionParser::getNNArchiveVersionedConfig() c
     return archiveConfig.value();
 }
 
+void resetParser(DetectionParserOptions& parser) {
+    // Reset per-head YOLO overrides before applying optional metadata.
+    parser.subtype.clear();
+    parser.confidenceThreshold = 0.f;
+    parser.decodingFamily = YoloDecodingFamily::TLBR;
+    parser.classes = 0;
+    parser.classNames.reset();
+    parser.anchors.clear();
+    parser.anchorMasks.clear();
+    parser.outputNamesToUse.clear();
+    parser.anchorsV2.clear();
+    parser.decodeSegmentation = false;
+    parser.decodeKeypoints = false;
+    parser.nKeypoints.reset();
+    parser.strides = {8, 16, 32};
+    parser.keypointLabelNames.clear();
+    parser.keypointEdges.clear();
+}
+
+void DetectionParser::checkKptExtraParams(DetectionParserOptions& parser, const nlohmann::json& extraParams) {
+    const auto keypointNamesIt = extraParams.find("keypoint_label_names");
+    if(keypointNamesIt != extraParams.end() && keypointNamesIt->is_array() && !keypointNamesIt->empty()) {
+        pimpl->logger->debug("Found keypoint_label_names in extraParams. Setting keypoint label names and number of keypoints to decode.");
+        std::vector<std::string> keypointLabelNames;
+        for(const auto& labelName : *keypointNamesIt) {
+            if(labelName.is_string()) {
+                keypointLabelNames.emplace_back(labelName.get<std::string>());
+            } else {
+                pimpl->logger->error("Non-string value found in keypoint_label_names array. keypoint_label_names should be an array of only strings.");
+            }
+        }
+        parser.nKeypoints = static_cast<int>(keypointLabelNames.size());  // prefer keypoint label names size
+        parser.decodeKeypoints = true;
+        parser.keypointLabelNames = keypointLabelNames;
+    }
+
+    if(extraParams.contains("skeleton_edges")) {
+        pimpl->logger->debug("Found skeleton_edges in extraParams. Setting keypoint edges for skeleton output.");
+        auto skeletonEdgesJson = extraParams["skeleton_edges"];
+        if(skeletonEdgesJson.is_array()) {
+            std::vector<dai::Edge> skeletonEdges;
+            for(const auto& edge : skeletonEdgesJson) {
+                if(edge.is_array() && edge.size() == 2) {
+                    skeletonEdges.emplace_back(dai::Edge{edge[0].get<uint32_t>(), edge[1].get<uint32_t>()});
+                }
+            }
+            parser.keypointEdges = skeletonEdges;
+        }
+    }
+}
+
+void DetectionParser::configureYOLONetworkParser(DetectionParserOptions& parser, const nn_archive::v1::Head& head) {
+    const nn_archive::v1::Metadata& metadata = head.metadata;
+
+    parser.nnFamily = DetectionNetworkType::YOLO;
+    if(metadata.subtype) {
+        parser.subtype = *metadata.subtype;
+        parser.decodingFamily = yoloDecodingFamilyResolver(*metadata.subtype);
+    }
+
+    parser.outputNamesToUse = metadata.yoloOutputs ? *metadata.yoloOutputs : std::vector<std::string>{};
+
+    if(parser.decodingFamily == YoloDecodingFamily::YOLO26) {
+        parser.strides = {1};
+    }
+
+    parser.decodeSegmentation = decodeSegmentationResolver(*head.outputs);
+
+    if(metadata.nKeypoints) {
+        parser.decodeKeypoints = true;
+        parser.nKeypoints = metadata.nKeypoints;
+    }
+
+    checkKptExtraParams(parser, metadata.extraParams);
+}
+
 void DetectionParser::setConfig(const dai::NNArchiveVersionedConfig& config) {
     archiveConfig = config;
 
@@ -81,54 +161,36 @@ void DetectionParser::setConfig(const dai::NNArchiveVersionedConfig& config) {
     std::vector<nn_archive::v1::Head> modelHeads = *model.heads;
     int yoloHeadIndex = 0;
     int numYoloHeads = 0;
+    int numMobilenetHeads = 0;
+    int mobilenetHeadIndex = 0;
     for(size_t i = 0; i < modelHeads.size(); i++) {
         if(modelHeads[i].parser == "YOLO" || modelHeads[i].parser == "YOLOExtendedParser") {
             yoloHeadIndex = static_cast<int>(i);
             numYoloHeads++;
+        } else if(modelHeads[i].parser == "SSD" || modelHeads[i].parser == "MOBILENET") {
+            numMobilenetHeads++;
+            mobilenetHeadIndex = static_cast<int>(i);
         }
     }
 
-    DAI_CHECK_V(numYoloHeads == 1, "NNArchive should contain exactly one YOLO head. Found {} YOLO heads.", numYoloHeads);  // no support for multi-head YOLO
-    const auto head = (*model.heads)[yoloHeadIndex];
+    DAI_CHECK_V(numYoloHeads > 0 || numMobilenetHeads > 0, "NNArchive should contain at least one detection head (YOLO or Mobilenet-SSD).");
+    DAI_CHECK_V(!(numYoloHeads > 0 && numMobilenetHeads > 0),
+                "NNArchive should contain only one type of detection head (YOLO or Mobilenet-SSD). Found {} YOLO heads and {} Mobilenet-SSD heads.",
+                numYoloHeads,
+                numMobilenetHeads);
+
+    int headIndex = (numYoloHeads > 0) ? yoloHeadIndex : mobilenetHeadIndex;
+
+    const auto head = (*model.heads)[headIndex];
+    auto& parser = properties.parser;
+    resetParser(parser);
 
     if(head.parser == "YOLO" || head.parser == "YOLOExtendedParser") {
-        properties.parser.nnFamily = DetectionNetworkType::YOLO;
-        if(head.metadata.subtype) {
-            properties.parser.subtype = *head.metadata.subtype;
-            properties.parser.decodingFamily = yoloDecodingFamilyResolver(*head.metadata.subtype);
-        }
-
-        // check if there are keypoints or segmentations to decode
-        if(head.outputs && !head.outputs->empty()) {
-            properties.parser.decodeSegmentation = decodeSegmentationResolver(*head.outputs);
-        }
-
-        if(head.metadata.nKeypoints) {
-            properties.parser.decodeKeypoints = true;
-            properties.parser.nKeypoints = head.metadata.nKeypoints;
-        }
-
-        if(head.metadata.yoloOutputs) {
-            properties.parser.outputNamesToUse = *head.metadata.yoloOutputs;
-        }
+        configureYOLONetworkParser(parser, head);
     } else if(head.parser == "SSD" || head.parser == "MOBILENET") {
         properties.parser.nnFamily = DetectionNetworkType::MOBILENET;
     } else {
         DAI_CHECK_V(false, "Unsupported parser: {}", head.parser);
-    }
-
-    if(head.metadata.extraParams.contains("skeleton_edges")) {
-        pimpl->logger->debug("Found skeleton_edges in extraParams");
-        auto skeletonEdgesJson = head.metadata.extraParams["skeleton_edges"];
-        if(skeletonEdgesJson.is_array()) {
-            std::vector<dai::Edge> skeletonEdges;
-            for(const auto& edge : skeletonEdgesJson) {
-                if(edge.is_array() && edge.size() == 2) {
-                    skeletonEdges.emplace_back(dai::Edge{edge[0].get<uint32_t>(), edge[1].get<uint32_t>()});
-                }
-            }
-            properties.parser.keypointEdges = skeletonEdges;
-        }
     }
 
     if(head.metadata.classes) {
@@ -156,6 +218,9 @@ void DetectionParser::setConfig(const dai::NNArchiveVersionedConfig& config) {
             std::vector<std::vector<float>> layerOut(anchorsIn[layer].size());
             for(size_t anchor = 0; anchor < layerOut.size(); ++anchor) {
                 std::vector<float> anchorOut(anchorsIn[layer][anchor].size());
+                if(anchorOut.size() != 2) {
+                    throw std::runtime_error("Each anchor should have exactly 2 dimensions (width and height).");
+                }
                 for(size_t dim = 0; dim < anchorOut.size(); ++dim) {
                     anchorOut[dim] = static_cast<float>(anchorsIn[layer][anchor][dim]);
                 }
@@ -178,6 +243,7 @@ YoloDecodingFamily DetectionParser::yoloDecodingFamilyResolver(const std::string
         return YoloDecodingFamily::TLBR;
     if(subtypeStr == "yolov3" || subtypeStr == "yolov3-tiny") return YoloDecodingFamily::v3AB;
     if(subtypeStr == "yolov5" || subtypeStr == "yolov7" || subtypeStr == "yolo-p" || subtypeStr == "yolov5-u") return YoloDecodingFamily::v5AB;
+    if(subtypeStr == "yolo26") return YoloDecodingFamily::YOLO26;
 
     pimpl->logger->error("Unknown YOLO subtype '{}', defaulting to TLBR decoding family.", name);
     return YoloDecodingFamily::TLBR;  // default
@@ -367,6 +433,219 @@ bool DetectionParser::getDecodeSegmentation() const {
 
 std::vector<int> DetectionParser::getStrides() const {
     return properties.parser.strides;
+}
+
+void DetectionParser::setRunOnHost(bool runOnHost) {
+    runOnHostVar = runOnHost;
+    explicitRunOnHostSet = true;
+}
+
+/**
+ * Check if the node is set to run on host
+ */
+bool DetectionParser::runOnHost() const {
+    return runOnHostVar;
+}
+
+void DetectionParser::run() {
+    auto& logger = ThreadedNode::pimpl->logger;
+    logger->info("Detection parser running on host.");
+
+    using namespace std::chrono;
+    while(mainLoop()) {
+        auto tAbsoluteBeginning = steady_clock::now();
+        std::shared_ptr<dai::NNData> sharedInputData;
+        {
+            auto blockEvent = this->inputBlockEvent();
+            sharedInputData = input.get<dai::NNData>();
+        }
+        auto outDetections = std::make_shared<dai::ImgDetections>();
+
+        if(!sharedInputData) {
+            logger->error("NN Data is empty. Skipping processing.");
+            continue;
+        }
+        auto tAfterMessageBeginning = steady_clock::now();
+        dai::NNData& inputData = *sharedInputData;
+
+        if(!imgSizesSet) {
+            const bool containsTransformation = inputData.transformation.has_value();
+            if(containsTransformation) {
+                std::tie(imgWidth, imgHeight) = inputData.transformation->getSize();
+            } else {
+                logger->warn("No image size provided for detection parser. Skipping processing and sending empty detections.");
+                continue;
+            }
+            // We have determined the image size, no need to try again in the future
+            imgSizesSet = true;
+        }
+
+        // Parse detections
+        switch(properties.parser.nnFamily) {
+            case DetectionNetworkType::YOLO: {
+                decodeYolo(inputData, *outDetections);
+                break;
+            }
+            case DetectionNetworkType::MOBILENET: {
+                decodeMobilenet(inputData, *outDetections, properties.parser.confidenceThreshold);
+                break;
+            }
+            default: {
+                logger->error("Unknown NN family. 'YOLO' and 'MOBILENET' are supported.");
+                break;
+            }
+        }
+
+        auto tBeforeSend = steady_clock::now();
+
+        // Copy over seq and ts
+        outDetections->setSequenceNum(inputData.getSequenceNum());
+        outDetections->setTimestamp(inputData.getTimestamp());
+        outDetections->setTimestampDevice(inputData.getTimestampDevice());
+        outDetections->transformation = inputData.transformation;
+
+        {
+            auto blockEvent = this->outputBlockEvent();
+            // Send detections
+            out.send(outDetections);
+        }
+
+        auto tAbsoluteEnd = steady_clock::now();
+        logger->debug("Detection parser total took {}ms, processing {}ms, getting_frames {}ms, sending_frames {}ms",
+                      duration_cast<microseconds>(tAbsoluteEnd - tAbsoluteBeginning).count() / 1000,
+                      duration_cast<microseconds>(tBeforeSend - tAfterMessageBeginning).count() / 1000,
+                      duration_cast<microseconds>(tAfterMessageBeginning - tAbsoluteBeginning).count() / 1000,
+                      duration_cast<microseconds>(tAbsoluteEnd - tBeforeSend).count() / 1000);
+    }
+}
+
+void DetectionParser::buildStage1() {
+    auto& logger = ThreadedNode::pimpl->logger;
+
+    // Grab dimensions from input tensor info
+    if(properties.networkInputs.size() > 0) {
+        if(properties.networkInputs.size() > 1) {
+            logger->warn("Detection parser supports only single input networks, assuming first input");
+        }
+        for(const auto& kv : properties.networkInputs) {
+            const dai::TensorInfo& tensorInfo = kv.second;
+            inTensorInfo.push_back(tensorInfo);
+        }
+    }
+    if(inTensorInfo.size() > 0) {
+        int numDimensions = inTensorInfo[0].numDimensions;
+        if(numDimensions < 2) {
+            logger->warn("Number of specified input dimensions is {} while at least 2 are required. The node will try to get input sizes at runtime.",
+                         numDimensions);
+        } else {
+            imgSizesSet = true;
+            imgWidth = inTensorInfo[0].dims[numDimensions - 1];
+            imgHeight = inTensorInfo[0].dims[numDimensions - 2];
+        }
+    } else {
+        logger->info("Unable to read input tensor height and width from static inputs. The node will try to get input sizes at runtime.");
+    }
+
+    if(!explicitRunOnHostSet) {
+        auto device = getDevice();
+        if(device) {
+            auto platform = device->getPlatform();
+            if(platform == Platform::RVC2 && properties.parser.decodeSegmentation) {
+                setRunOnHost(true);
+                logger->info("YOLO segmentation postprocessing is not supported on RVC2. Running postprocessing on host.");
+            }
+        }
+    }
+}
+
+void DetectionParser::decodeMobilenet(dai::NNData& nnData, dai::ImgDetections& outDetections, float confidenceThr) {
+    auto& logger = ThreadedNode::pimpl->logger;
+
+    int maxDetections = 100;
+    std::vector<dai::ImgDetection> detections;
+    std::string tensorName;
+    for(const auto& tensor : nnData.getAllLayers()) {
+        if(tensor.offset == 0) {
+            // // The tensor we want to checkout
+            // if(tensor.numDimensions != 4) {
+            //     std::cout << "ERROR while decoding Mobilenet. Output tensor has incorrect dimensions. Number of dimensions: " << tensor.numDimensions
+            //               << std::endl;
+            // }
+            // // Get tensor output size in Bytes
+            // // Expected dimensions are [1, 1, N, 7] where N is number of detections
+            // if(tensor.dims[3] != 7) {
+            //     std::cout << "ERROR while decoding Mobilenet. Expecting 7 fields for every detection but: " << tensor.dims[3] << " found.\n";
+            // }
+            // maxDetections = tensor.dims[tensor.numDimensions - 2];
+            tensorName = tensor.name;
+        }
+    }
+
+    auto tensorData = nnData.getTensor<float>(tensorName);
+    maxDetections = tensorData.size() / 7;
+    if(static_cast<int>(tensorData.size()) < maxDetections * 7) {
+        logger->error("Error while parsing Mobilenet. Vector not long enough, expected size: {}, real size {}", maxDetections * 7, tensorData.size());
+        return;
+    }
+
+    struct raw_Detection {  // need to update it to include more
+        float header;
+        float label;
+        float confidence;
+        float xmin;
+        float ymin;
+        float xmax;
+        float ymax;
+    };
+
+    float* rawPtr = tensorData.data();
+    for(int i = 0; i < maxDetections; i++) {
+        raw_Detection temp;
+        // TODO This is likely unnecessary optimisation
+        memcpy(&temp, &rawPtr[i * 7], sizeof(raw_Detection));
+
+        // if header == -1, stop sooner
+        if(temp.header == -1.0f) break;
+
+        float currentConfidence = temp.confidence;
+        if(currentConfidence >= confidenceThr) {
+            dai::ImgDetection d;
+            d.label = temp.label;
+
+            d.confidence = currentConfidence;
+
+            d.xmin = temp.xmin;
+            d.ymin = temp.ymin;
+            d.xmax = temp.xmax;
+            d.ymax = temp.ymax;
+
+            outDetections.detections.push_back(d);
+        }
+    }
+}
+
+void DetectionParser::decodeYolo(dai::NNData& nnData, dai::ImgDetections& outDetections) {
+    std::shared_ptr<spdlog::async_logger>& logger = ThreadedNode::pimpl->logger;
+    switch(properties.parser.decodingFamily) {
+        case YoloDecodingFamily::R1AF:  // anchor free: yolo v6r1
+            utilities::DetectionParserUtils::decodeR1AF(nnData, outDetections, properties, logger);
+            break;
+        case YoloDecodingFamily::v3AB:  // anchor based yolo v3 v3-Tiny
+            utilities::DetectionParserUtils::decodeV3AB(nnData, outDetections, properties, logger);
+            break;
+        case YoloDecodingFamily::v5AB:  // anchor based yolo v5, v7, P
+            utilities::DetectionParserUtils::decodeV5AB(nnData, outDetections, properties, logger);
+            break;
+        case YoloDecodingFamily::TLBR:  // top left bottom right anchor free: yolo v6r2, v8 v10 v11
+            utilities::DetectionParserUtils::decodeTLBR(nnData, outDetections, properties, logger);
+            break;
+        case YoloDecodingFamily::YOLO26:  // already decoded TLBR model
+            utilities::DetectionParserUtils::decodeEndToEnd(nnData, outDetections, properties, logger);
+            break;
+        default:
+            logger->error("Unknown Yolo decoding family. 'R1AF', 'v3AB', 'v5AB', 'TLBR' and 'YOLO26' are supported.");
+            throw std::runtime_error("Unknown Yolo decoding family");
+    }
 }
 
 }  // namespace node

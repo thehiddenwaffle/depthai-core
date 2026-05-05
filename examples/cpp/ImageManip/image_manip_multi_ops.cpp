@@ -1,10 +1,21 @@
+#include <atomic>
+#include <csignal>
 #include <memory>
 
 #include "depthai/depthai.hpp"
 #include "depthai/pipeline/datatype/ImgFrame.hpp"
 #include "depthai/pipeline/node/host/Display.hpp"
 
+std::atomic<bool> quitEvent(false);
+
+void signalHandler(int) {
+    quitEvent = true;
+}
+
 int main(int argc, char** argv) {
+    signal(SIGTERM, signalHandler);
+    signal(SIGINT, signalHandler);
+
     std::shared_ptr<dai::Device> device = nullptr;
     if(argc <= 1) {
         device = std::make_shared<dai::Device>();
@@ -14,7 +25,6 @@ int main(int argc, char** argv) {
     dai::Pipeline pipeline(device);
 
     auto camRgb = pipeline.create<dai::node::Camera>()->build(dai::CameraBoardSocket::CAM_A);
-    auto display = pipeline.create<dai::node::Display>();
     auto manip = pipeline.create<dai::node::ImageManip>();
 
     manip->setMaxOutputFrameSize(4000000);
@@ -27,8 +37,19 @@ int main(int argc, char** argv) {
 
     auto* rgbOut = camRgb->requestOutput({1920, 1080});
     rgbOut->link(manip->inputImage);
-    manip->out.link(display->input);
-
+    auto outputQueue = manip->out.createOutputQueue();
     pipeline.start();
+    while(pipeline.isRunning() && !quitEvent) {
+        auto imgFrame = outputQueue->get<dai::ImgFrame>();
+        cv::imshow("Manipulated Frame", imgFrame->getCvFrame());
+        int key = cv::waitKey(1);
+        if(key == 'q') {
+            break;
+        }
+    }
+
+    pipeline.stop();
     pipeline.wait();
+
+    return 0;
 }

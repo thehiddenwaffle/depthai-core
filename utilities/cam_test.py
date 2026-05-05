@@ -27,6 +27,7 @@ Other controls:
 '\' - Select control: scene mode
 ';' - Select control: control mode
 ''' - Select control: capture intent
+'*' - Select control: manual white balance
 'a' 'd' - Increase/decrease dot projector intensity
 'w' 's' - Increase/decrease flood LED intensity
 
@@ -44,6 +45,7 @@ import os
 import cv2
 import numpy as np
 import argparse
+import ast
 import collections
 import time
 from pathlib import Path
@@ -51,8 +53,20 @@ import sys
 import signal
 
 
-ALL_SOCKETS = ['rgb', 'left', 'right', 'cama', 'camb', 'camc', 'camd', 'came']
+cam_socket_opts = {
+    'rgb': dai.CameraBoardSocket.CAM_A,
+    'left': dai.CameraBoardSocket.CAM_B,
+    'right': dai.CameraBoardSocket.CAM_C,
+    'cama': dai.CameraBoardSocket.CAM_A,
+    'camb': dai.CameraBoardSocket.CAM_B,
+    'camc': dai.CameraBoardSocket.CAM_C,
+    'camd': dai.CameraBoardSocket.CAM_D,
+    'came': dai.CameraBoardSocket.CAM_E,
+}
+ALL_SOCKETS = list(cam_socket_opts.keys())
 DEPTH_STREAM_NAME = "stereo_depth"
+DEFAULT_RESOLUTION = (1280, 800)
+
 def unpackRaw10(rawData, width, height, stride=None):
     """
     Unpacks RAW10 data from DepthAI pipeline into a 16-bit grayscale array.
@@ -112,6 +126,7 @@ def unpackRaw10(rawData, width, height, stride=None):
 
 def socket_type_pair(arg):
     socket, type = arg.split(',')
+    socket = socket.strip()
     if not (socket in ALL_SOCKETS):
         raise ValueError("")
     if not (type in ['m', 'mono', 'c', 'color', 't', 'tof', 'th', 'thermal']):
@@ -121,16 +136,67 @@ def socket_type_pair(arg):
     is_thermal = True if type in ['th', 'thermal'] else False
     return [socket, is_color, is_tof, is_thermal]
 
+def camera_tuning_item(arg: str):
+    """
+    Accept either:
+      - PATH
+      - SOCKET,PATH
+    Returns (socket_or_all, Path).
+    """
+    # Case 1: plain path = global tuning for all cameras
+    if ',' not in arg:
+        return ("__all__", Path(arg))
+
+    # Case 2: socket,path
+    socket, path_str = arg.split(',', 1)
+
+    if socket not in ALL_SOCKETS:
+        raise argparse.ArgumentTypeError(f"Unknown camera socket: {socket}")
+
+    return (socket, Path(path_str))
+
+def resolution_tuple(arg):
+    try:
+        value = ast.literal_eval(arg)
+    except (ValueError, SyntaxError):
+        raise argparse.ArgumentTypeError(
+            "Resolution must be a tuple like (1280, 800)")
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        raise argparse.ArgumentTypeError(
+            "Resolution must contain width and height")
+    try:
+        width = int(value[0])
+        height = int(value[1])
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError(
+            "Resolution values must be integers")
+    if width <= 0 or height <= 0:
+        raise argparse.ArgumentTypeError("Resolution values must be positive")
+    return (width, height)
+
+
+def resolution_entry(arg):
+    if ':' in arg:
+        socket, res = arg.split(':', 1)
+        socket_name = socket.strip()
+        if socket_name not in ALL_SOCKETS:
+            raise argparse.ArgumentTypeError(
+                f"Invalid socket '{socket_name}'. Use one of: {', '.join(ALL_SOCKETS)}.")
+        return socket_name, resolution_tuple(res.strip())
+    return None, resolution_tuple(arg)
+
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('-cams', '--cameras', type=socket_type_pair, nargs='+',
                     default=[],
                     help="Which camera sockets to enable, and type: c[olor] / m[ono] / t[of] / th[ermal]. "
                     "E.g: -cams rgb,m right,c . If not specified, all connected cameras will be used.")
-parser.add_argument('-mres', '--mono-resolution', type=int, default=800, choices={480, 400, 720, 800},
-                    help="Select mono camera resolution (height). Default: %(default)s")
-parser.add_argument('-cres', '--color-resolution', default='1080', choices={'720', '800', '1080', '1012', '1200', '1520', '4k', '5mp', '12mp', '13mp', '48mp'},
-                    help="Select color camera resolution / height. Default: %(default)s")
+parser.add_argument('-res', '--resolution', type=resolution_entry, action='append', default=[],
+                    metavar='[socket:](width,height)',
+                    help="Select camera resolution as a tuple (width, height). "
+                    "Use socket:(width,height) to override specific sockets (same names as -cams). "
+                    "Default is (1280, 800) for all sockets. Can be provided multiple times."
+                    "Example is -res cama:1920,1080, -res 640,480")
 parser.add_argument('-rot', '--rotate', const='all', choices={'all', 'rgb', 'mono'}, nargs="?",
                     help="Which cameras to rotate 180 degrees. All if not filtered")
 parser.add_argument('-fps', '--fps', type=float, default=30,
@@ -141,8 +207,8 @@ parser.add_argument('-ds', '--isp-downscale', default=1, type=int,
                     help="Downscale the ISP output by this factor")
 parser.add_argument('-rs', '--resizable-windows', action='store_true',
                     help="Make OpenCV windows resizable. Note: may introduce some artifacts")
-parser.add_argument('-tun', '--camera-tuning', type=Path,
-                    help="Path to custom camera tuning database")
+parser.add_argument('-tun', '--camera-tuning', type=camera_tuning_item, nargs='+', default=[],
+                    help="Camera tuning database. Either a single PATH, which will apply to all cameras, or one or more SOCKET,PATH pairs. Example: -tun /path/to/tuning.db  or  -tun rgb,/path/to/rgb.db right,/path/to/right.db")
 parser.add_argument('-raw', '--enable-raw', default=False, action="store_true",
                     help='Enable the RAW camera streams')
 parser.add_argument('-tofraw', '--tof-raw', action='store_true',
@@ -180,6 +246,18 @@ parser.add_argument("-h", "--help", action="store_true", default=False,
 
 args = parser.parse_args()
 
+resolution_default = DEFAULT_RESOLUTION
+socket_resolution_overrides = {}
+for socket, resolution in args.resolution:
+    if socket:
+        socket_resolution_overrides[socket] = resolution
+    else:
+        resolution_default = resolution
+
+
+def get_socket_resolution(socket):
+    return socket_resolution_overrides.get(socket, resolution_default)
+
 # Set timeouts before importing depthai
 os.environ["DEPTHAI_CONNECTION_TIMEOUT"] = str(args.connection_timeout)
 os.environ["DEPTHAI_BOOT_TIMEOUT"] = str(args.boot_timeout)
@@ -198,17 +276,6 @@ if args.gui:
 
 print("DepthAI version:", dai.__version__)
 print("DepthAI path:", dai.__file__)
-
-cam_socket_opts = {
-    'rgb': dai.CameraBoardSocket.CAM_A,
-    'left': dai.CameraBoardSocket.CAM_B,
-    'right': dai.CameraBoardSocket.CAM_C,
-    'cama': dai.CameraBoardSocket.CAM_A,
-    'camb': dai.CameraBoardSocket.CAM_B,
-    'camc': dai.CameraBoardSocket.CAM_C,
-    'camd': dai.CameraBoardSocket.CAM_D,
-    'came': dai.CameraBoardSocket.CAM_E,
-}
 
 rotate = {
     'rgb': args.rotate in ['all', 'rgb'],
@@ -272,10 +339,11 @@ def socket_to_socket_opt(socket: dai.CameraBoardSocket) -> str:
 signal.signal(signal.SIGINT, exit_cleanly)
 
 # Connect to device, so that we can get connected cameras in case of no args
-success, device_info = dai.Device.getDeviceById(args.device)
 dai_device_args = []
-if success:
-    dai_device_args.append(device_info)
+if args.device:
+    success, device_info = dai.Device.getDeviceById(args.device)
+    if success:
+        dai_device_args.append(device_info)
 
 with dai.Pipeline(dai.Device(*dai_device_args)) as pipeline:
     cam_list = []
@@ -345,7 +413,7 @@ with dai.Pipeline(dai.Device(*dai_device_args)) as pipeline:
         else:
             cam[c] = pipeline.create(dai.node.Camera).build(cam_socket_opts[c])
             cap = dai.ImgFrameCapability()
-            cap.size.fixed((1280, 800))
+            cap.size.fixed(get_socket_resolution(c))
             cap.fps.fixed(args.fps)
             stream_name = c
             xout[stream_name] = cam[c].requestOutput(cap, True)
@@ -357,7 +425,20 @@ with dai.Pipeline(dai.Device(*dai_device_args)) as pipeline:
                 streams.append(streamName)
 
     if args.camera_tuning:
-        pipeline.setCameraTuningBlobPath(str(args.camera_tuning))
+        if len(args.camera_tuning) == 1 and args.camera_tuning[0][0] == "__all__":
+            # Single tuning for all cameras
+            tuning_path = args.camera_tuning[0][1]
+            print(f'Applying camera tuning from {tuning_path} to all cameras')
+            pipeline.setCameraTuningBlobPath(str(tuning_path))
+        else:
+            # Per-socket tuning
+            for socket, tuning_path in args.camera_tuning:
+                if socket == "__all__":
+                    print(f'Cannot apply all tuning to all and specific sockets at the same time.')
+                    exit(1)
+                cam_socket = cam_socket_opts[socket]
+                print(f'Applying camera tuning from {tuning_path} to camera socket {socket}')
+                pipeline.setCameraTuningBlobPath(cam_socket, str(tuning_path))
 
     stereo = None
 
@@ -507,6 +588,7 @@ with dai.Pipeline(dai.Device(*dai_device_args)) as pipeline:
     sharpness = 0
     luma_denoise = 0
     chroma_denoise = 0
+    wb_manual = 5500
     control = 'none'
     show = args.show_meta
 
@@ -711,7 +793,7 @@ with dai.Pipeline(dai.Device(*dai_device_args)) as pipeline:
                 floodIntensity = 0
             device.setIrFloodLightIntensity(floodIntensity)
             print(f'IR Flood intensity:', floodIntensity)
-        elif key >= 0 and chr(key) in '34567890[]p\\;\'':
+        elif key >= 0 and chr(key) in '34567890[]p\\;\'*':
             if key == ord('3'):
                 control = 'awb_mode'
             elif key == ord('4'):
@@ -740,6 +822,8 @@ with dai.Pipeline(dai.Device(*dai_device_args)) as pipeline:
                 control = 'chroma_denoise'
             elif key == ord('p'):
                 control = 'tof_amplitude_min'
+            elif key == ord('*'):
+                control = 'wb_manual'
             print("Selected control:", control)
         elif key in [ord('-'), ord('_'), ord('+'), ord('=')]:
             change = 0
@@ -802,6 +886,11 @@ with dai.Pipeline(dai.Device(*dai_device_args)) as pipeline:
                 chroma_denoise = clamp(chroma_denoise + change, 0, 4)
                 print("Chroma denoise:", chroma_denoise)
                 ctrl.setChromaDenoise(chroma_denoise)
+            elif control == 'wb_manual':
+                wb_manual = wb_manual + change * 100
+                print("White balance:", wb_manual)
+                ctrl.setManualWhiteBalance(wb_manual)
+
             # elif control == 'tof_amplitude_min' and tof: # TODO
             #     amp_min = clamp(
             #         tofConfig.depthParams.minimumAmplitude + change, 0, 50)

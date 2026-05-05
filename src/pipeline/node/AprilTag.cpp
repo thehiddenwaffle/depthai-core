@@ -147,15 +147,17 @@ void handleErrors(int e) {
     }
 }
 
-void setDetectorConfig(apriltag_detector_t* td, apriltag_family_t* tf, AprilTagConfig::Family& family, const dai::AprilTagConfig& config) {
+void setDetectorConfig(apriltag_detector_t* td, apriltag_family_t*& tf, AprilTagConfig::Family& family, const dai::AprilTagConfig& config) {
     // Remove old detector family
     apriltag_detector_clear_families(td);
 
     // Destroy old detector family
     destroyAprilTagFamily(tf, family);
+    tf = nullptr;
 
     // Set new detector family
-    apriltag_detector_add_family(td, getAprilTagFamily(config.family));
+    tf = getAprilTagFamily(config.family);
+    apriltag_detector_add_family(td, tf);
     family = config.family;
 
     // Set detector config
@@ -196,6 +198,16 @@ void AprilTag::run() {
     apriltag_family_t* tf = nullptr;
     AprilTagConfig::Family tfamily = config.family;
     std::unique_ptr<apriltag_detector_t, void (*)(apriltag_detector_t*)> td(apriltag_detector_create(), apriltag_detector_destroy);
+    struct DetectorFamilyCleanup {
+        apriltag_detector_t* detector;
+        apriltag_family_t*& family;
+        AprilTagConfig::Family& familyType;
+
+        ~DetectorFamilyCleanup() {
+            apriltag_detector_clear_families(detector);
+            destroyAprilTagFamily(family, familyType);
+        }
+    } detectorFamilyCleanup{td.get(), tf, tfamily};
 
     // Set detector properties
     setDetectorProperties(td.get(), properties);
@@ -206,31 +218,36 @@ void AprilTag::run() {
     // Handle possible errors during configuration
     handleErrors(errno);
 
-    while(isRunning()) {
-        // Retrieve config from user if available
-        if(properties.inputConfigSync) {
-            inConfig = inputConfig.get<AprilTagConfig>();
-        } else {
-            inConfig = inputConfig.tryGet<AprilTagConfig>();
-        }
-
-        // Set config if there is one and handle possible errors
-        if(inConfig != nullptr) {
-            setDetectorConfig(td.get(), tf, tfamily, *inConfig);
-            handleErrors(errno);
-        }
-
-        // Get latest frame
-        inFrame = inputImage.get<ImgFrame>();
-
+    while(mainLoop()) {
         // Preallocate data on stack for AprilTag detection
         int32_t width = 0;
         int32_t height = 0;
         int32_t stride = 0;
         uint8_t* imgbuf = nullptr;
+        ImgFrame::Type frameType = ImgFrame::Type::NONE;
 
-        // Prepare data for AprilTag detection based on input frame type
-        ImgFrame::Type frameType = inFrame->getType();
+        {
+            auto blockEvent = this->inputBlockEvent();
+
+            // Retrieve config from user if available
+            if(properties.inputConfigSync) {
+                inConfig = inputConfig.get<AprilTagConfig>();
+            } else {
+                inConfig = inputConfig.tryGet<AprilTagConfig>();
+            }
+
+            // Set config if there is one and handle possible errors
+            if(inConfig != nullptr) {
+                setDetectorConfig(td.get(), tf, tfamily, *inConfig);
+                handleErrors(errno);
+            }
+
+            // Get latest frame
+            inFrame = inputImage.get<ImgFrame>();
+
+            // Prepare data for AprilTag detection based on input frame type
+            frameType = inFrame->getType();
+        }
 
         if(frameType == ImgFrame::Type::GRAY8 || frameType == ImgFrame::Type::NV12) {
             width = static_cast<int32_t>(inFrame->getWidth());
@@ -307,16 +324,17 @@ void AprilTag::run() {
         aprilTags->setTimestamp(inFrame->getTimestamp());
         aprilTags->setTimestampDevice(inFrame->getTimestampDevice());
 
-        // Send detections and pass through input frame
-        out.send(aprilTags);
-        passthroughInputImage.send(inFrame);
+        {
+            auto blockEvent = this->outputBlockEvent();
+
+            // Send detections and pass through input frame
+            out.send(aprilTags);
+            passthroughInputImage.send(inFrame);
+        }
 
         // Logging
         logger->trace("Detected {} april tags", zarray_size(detections.get()));
     }
-
-    // Destroy AprilTag family
-    destroyAprilTagFamily(tf, tfamily);
 }
 
 #else

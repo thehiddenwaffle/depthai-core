@@ -66,6 +66,8 @@ set(SOURCE_LIST
     src/nn_archive/NNArchiveBindings.cpp
     src/log/LogBindings.cpp
     src/VersionBindings.cpp
+    src/PlatformBindings.cpp
+    src/CrashDumpBindings.cpp
     src/common/ModelTypeBindings.cpp
 
     src/pipeline/node/NodeBindings.cpp
@@ -75,6 +77,7 @@ set(SOURCE_LIST
     src/pipeline/node/MonoCameraBindings.cpp
     src/pipeline/node/StereoDepthBindings.cpp
     src/pipeline/node/NeuralNetworkBindings.cpp
+    src/pipeline/node/GateBindings.cpp
     src/pipeline/node/VideoEncoderBindings.cpp
     src/pipeline/node/ImageManipBindings.cpp
     src/pipeline/node/SPIOutBindings.cpp
@@ -92,13 +95,13 @@ set(SOURCE_LIST
     src/pipeline/node/ToFBindings.cpp
     src/pipeline/node/AprilTagBindings.cpp
     src/pipeline/node/DetectionParserBindings.cpp
+    src/pipeline/node/SegmentationParserBindings.cpp
     src/pipeline/node/WarpBindings.cpp
     src/pipeline/node/SyncBindings.cpp
     src/pipeline/node/BenchmarkBindings.cpp
     src/pipeline/node/UVCBindings.cpp
     src/pipeline/node/ToFBindings.cpp
     src/pipeline/node/PointCloudBindings.cpp
-    src/pipeline/node/SyncBindings.cpp
     src/pipeline/node/MessageDemuxBindings.cpp
     src/pipeline/node/HostNodeBindings.cpp
     src/pipeline/node/RecordBindings.cpp
@@ -106,8 +109,11 @@ set(SOURCE_LIST
     src/pipeline/node/ImageAlignBindings.cpp
     src/pipeline/node/RGBDBindings.cpp
     src/pipeline/node/ImageFiltersBindings.cpp
+    src/pipeline/node/RectificationBindings.cpp
+    src/pipeline/node/NeuralDepthBindings.cpp
+    src/pipeline/node/NeuralAssistedStereoBindings.cpp
     src/pipeline/FilterParamsBindings.cpp
-
+    src/pipeline/node/VppBindings.cpp
     src/pipeline/datatype/ADatatypeBindings.cpp
     src/pipeline/datatype/AprilTagConfigBindings.cpp
     src/pipeline/datatype/AprilTagsBindings.cpp
@@ -115,15 +121,20 @@ set(SOURCE_LIST
     src/pipeline/datatype/CameraControlBindings.cpp
     src/pipeline/datatype/EdgeDetectorConfigBindings.cpp
     src/pipeline/datatype/FeatureTrackerConfigBindings.cpp
+    src/pipeline/datatype/GateControlBindings.cpp
     src/pipeline/datatype/ThermalConfigBindings.cpp
     src/pipeline/datatype/ToFConfigBindings.cpp
     src/pipeline/datatype/ImageManipConfigBindings.cpp
     src/pipeline/datatype/ImgDetectionsBindings.cpp
+    src/pipeline/datatype/SegmentationParserConfigBindings.cpp
+    src/pipeline/datatype/SegmentationMaskBindings.cpp
     src/pipeline/datatype/ImgFrameBindings.cpp
     src/pipeline/datatype/EncodedFrameBindings.cpp
     src/pipeline/datatype/IMUDataBindings.cpp
+    src/pipeline/datatype/MapDataBindings.cpp
     src/pipeline/datatype/MessageGroupBindings.cpp
     src/pipeline/datatype/NNDataBindings.cpp
+    src/pipeline/datatype/NeuralDepthConfigBindings.cpp
     src/pipeline/datatype/RGBDDataBindings.cpp
     src/pipeline/datatype/SpatialImgDetectionsBindings.cpp
     src/pipeline/datatype/SpatialLocationCalculatorConfigBindings.cpp
@@ -136,9 +147,12 @@ set(SOURCE_LIST
     src/pipeline/datatype/PointCloudConfigBindings.cpp
     src/pipeline/datatype/ObjectTrackerConfigBindings.cpp
     src/pipeline/datatype/PointCloudDataBindings.cpp
+    src/pipeline/datatype/PipelineEventBindings.cpp
+    src/pipeline/datatype/PipelineStateBindings.cpp
     src/pipeline/datatype/TransformDataBindings.cpp
     src/pipeline/datatype/ImageAlignConfigBindings.cpp
     src/pipeline/datatype/ImgAnnotationsBindings.cpp
+    src/pipeline/datatype/VppConfigBindings.cpp
     src/remote_connection/RemoteConnectionBindings.cpp
 
     src/capabilities/CapabilityBindings.cpp
@@ -174,6 +188,9 @@ if(DEPTHAI_DYNAMIC_CALIBRATION_SUPPORT)
         src/pipeline/node/DynamicCalibrationBindings.cpp
         src/pipeline/datatype/DynamicCalibrationResultsBindings.cpp
         src/pipeline/datatype/DynamicCalibrationControlBindings.cpp
+        src/pipeline/node/AutoCalibrationBindings.cpp
+        src/pipeline/datatype/AutoCalibrationConfigBindings.cpp
+        src/pipeline/datatype/AutoCalibrationResultBindings.cpp
     )
 endif()
 
@@ -287,7 +304,7 @@ if(DEPTHAI_MERGED_TARGET)
 endif()
 
 set(DEPTHAI_LINK_TARGET depthai::core)
-if(NOT DEPTHAI_MERGED_TARGET)
+if(DEPTHAI_OPENCV_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
     list(APPEND DEPTHAI_LINK_TARGET depthai::opencv)
 endif()
 
@@ -382,12 +399,17 @@ if(SANITIZE_ADDRESS OR SANITIZE_MEMORY OR SANITIZE_THREAD OR SANITIZE_UNDEFINED)
         execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libclang_rt.asan-${CMAKE_HOST_SYSTEM_PROCESSOR}.so OUTPUT_VARIABLE LIBASAN_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
     elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libasan.so OUTPUT_VARIABLE LIBASAN_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+        execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++.so OUTPUT_VARIABLE LIBSTDCXX_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
     endif()
     # Set preload env variable
     if(APPLE)
         set(ASAN_ENVIRONMENT_VARS "DYLD_INSERT_LIBRARIES=${LIBASAN_PATH}" "ASAN_OPTIONS=leak_check_at_exit=0")
     elseif(UNIX)
-        set(ASAN_ENVIRONMENT_VARS "LD_PRELOAD=${LIBASAN_PATH}" "ASAN_OPTIONS=leak_check_at_exit=0")
+        if(LIBSTDCXX_PATH)
+            set(ASAN_ENVIRONMENT_VARS "LD_PRELOAD=${LIBASAN_PATH}:${LIBSTDCXX_PATH}" "ASAN_OPTIONS=leak_check_at_exit=0")
+        else()
+            set(ASAN_ENVIRONMENT_VARS "LD_PRELOAD=${LIBASAN_PATH}" "ASAN_OPTIONS=leak_check_at_exit=0")
+        endif()
     endif()
     message(STATUS "ASAN environment variables: ${ASAN_ENVIRONMENT_VARS}")
 endif()

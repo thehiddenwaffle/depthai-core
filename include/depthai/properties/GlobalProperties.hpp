@@ -3,6 +3,7 @@
 #include "depthai/common/EepromData.hpp"
 #include "depthai/common/optional.hpp"
 #include "depthai/properties/Properties.hpp"
+#include "depthai/utility/CompilerWarnings.hpp"
 
 namespace dai {
 
@@ -10,6 +11,15 @@ namespace dai {
  * Specify properties which apply for whole pipeline
  */
 struct GlobalProperties : PropertiesSerializable<Properties, GlobalProperties> {
+    std::optional<std::string> pipelineName;
+    std::optional<std::string> pipelineVersion;
+    ~GlobalProperties() override;
+};
+
+/**
+ * Specify properties which apply for a device
+ */
+struct DeviceProperties : PropertiesSerializable<Properties, DeviceProperties> {
     constexpr static uint32_t SIPP_BUFFER_DEFAULT_SIZE = 18 * 1024;
     constexpr static uint32_t SIPP_DMA_BUFFER_DEFAULT_SIZE = 16 * 1024;
 
@@ -23,8 +33,6 @@ struct GlobalProperties : PropertiesSerializable<Properties, GlobalProperties> {
      * draw
      */
     double leonMssFrequencyHz = 700 * 1000 * 1000;
-    std::optional<std::string> pipelineName;
-    std::optional<std::string> pipelineVersion;
     /**
      * Calibration data sent through pipeline
      */
@@ -44,6 +52,15 @@ struct GlobalProperties : PropertiesSerializable<Properties, GlobalProperties> {
      * Uri which points to camera tuning blob
      */
     std::string cameraTuningBlobUri;
+
+    /**
+     * Socket specific camera tuning blob size in bytes
+     */
+    std::unordered_map<CameraBoardSocket, std::uint32_t> cameraSocketTuningBlobSize;
+    /**
+     * Socket specific camera tuning blob uri
+     */
+    std::unordered_map<CameraBoardSocket, std::string> cameraSocketTuningBlobUri;
 
     /**
      * Chunk size for splitting device-sent XLink packets, in bytes. A larger value could
@@ -69,16 +86,41 @@ struct GlobalProperties : PropertiesSerializable<Properties, GlobalProperties> {
      */
     uint32_t sippDmaBufferSize = SIPP_DMA_BUFFER_DEFAULT_SIZE;
 
-    ~GlobalProperties() override;
+    ~DeviceProperties() override;
+
+    DeviceProperties& setFrom(const DeviceProperties& other) {
+        leonCssFrequencyHz = other.leonCssFrequencyHz;
+        leonMssFrequencyHz = other.leonMssFrequencyHz;
+        if(other.calibData) {
+            calibData = other.calibData;
+            eepromId = other.eepromId;
+        }
+        if(other.cameraTuningBlobSize) {
+            cameraTuningBlobSize = other.cameraTuningBlobSize;
+            cameraTuningBlobUri = other.cameraTuningBlobUri;
+        }
+        cameraSocketTuningBlobSize = other.cameraSocketTuningBlobSize;
+        cameraSocketTuningBlobUri = other.cameraSocketTuningBlobUri;
+        xlinkChunkSize = other.xlinkChunkSize;
+        sippBufferSize = other.sippBufferSize;
+        sippDmaBufferSize = other.sippDmaBufferSize;
+        return *this;
+    }
 };
 
-DEPTHAI_SERIALIZE_EXT(GlobalProperties,
+DEPTHAI_BEGIN_SUPPRESS_DEPRECATION_WARNING
+
+DEPTHAI_SERIALIZE_EXT(GlobalProperties, pipelineName, pipelineVersion);
+
+DEPTHAI_END_SUPPRESS_DEPRECATION_WARNING
+
+DEPTHAI_SERIALIZE_EXT(DeviceProperties,
                       leonCssFrequencyHz,
                       leonMssFrequencyHz,
-                      pipelineName,
-                      pipelineVersion,
                       cameraTuningBlobSize,
                       cameraTuningBlobUri,
+                      cameraSocketTuningBlobSize,
+                      cameraSocketTuningBlobUri,
                       calibData,
                       eepromId,
                       xlinkChunkSize,

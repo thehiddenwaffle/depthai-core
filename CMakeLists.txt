@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 
 include(cmake/depthaiOptions.cmake)
+if(CMAKE_TOOLCHAIN_FILE)
+    message(STATUS "Toolchain file specified: ${CMAKE_TOOLCHAIN_FILE}")
+else()
+    message(STATUS "No toolchain file specified.")
+endif()
 
 if(WIN32)
     add_compile_options(/MP)
@@ -30,6 +35,11 @@ if(POLICY CMP0028)
 endif()
 
 if(DEPTHAI_BOOTSTRAP_VCPKG)
+    if(CMAKE_TOOLCHAIN_FILE AND NOT CMAKE_TOOLCHAIN_FILE MATCHES "generated/toolchain.cmake$")
+        get_filename_component(_abs_toolchain "${CMAKE_TOOLCHAIN_FILE}" ABSOLUTE)
+        set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${_abs_toolchain}" CACHE STRING "Toolchain to chainload" FORCE)
+    endif()
+
     message(STATUS "Including vcpkg.cmake")
     include(cmake/vcpkg.cmake)
     include(cmake/depthaiVcpkgFeatures.cmake)
@@ -64,9 +74,8 @@ else()
     message(STATUS "Using toolchain file: ${CMAKE_TOOLCHAIN_FILE}")
 endif()
 
-
 # Create depthai project
-project(depthai VERSION "3.1.0" LANGUAGES CXX C)
+project(depthai VERSION "3.6.1" LANGUAGES CXX C)
 set(DEPTHAI_PRE_RELEASE_TYPE "") # Valid options are "alpha", "beta", "rc", ""
 set(DEPTHAI_PRE_RELEASE_VERSION "0") # Valid options are "0", "1", "2", ...
 
@@ -233,15 +242,11 @@ set(THIRDPARTY_RTABMAP_LIBRARIES "rtabmap::utilite" CACHE STRING "Optional libra
 set(TARGET_RTABMAP_NAME ${PROJECT_NAME}-rtabmap)
 set(TARGET_RTABMAP_ALIAS rtabmap)
 if(DEPTHAI_RTABMAP_SUPPORT)
-    if(${RTABMap_FOUND} AND DEPTHAI_HAVE_PCL_SUPPORT)
+    if(${RTABMap_FOUND})
         set(DEPTHAI_HAVE_RTABMAP_SUPPORT ON)
-        message(STATUC "RTABMAP found. RTABMAP Support enabled")
+        message(STATUS "RTABMAP found. RTABMAP Support enabled")
     else()
-        if(${RTABMap_FOUND})
-            message(WARNING "RTABMAP found but depthai does not have PCL support. RTABMAP Support disabled")
-        else()
-            message(WARNING "RTABMAP not found. RTABMAP Support disabled")
-        endif()
+        message(WARNING "RTABMAP not found. RTABMAP Support disabled")
     endif()
 endif()
 
@@ -254,7 +259,7 @@ set(TARGET_BASALT_ALIAS basalt)
 if(DEPTHAI_BASALT_SUPPORT)
     if(${basalt_sdk_FOUND})
         set(DEPTHAI_HAVE_BASALT_SUPPORT ON)
-        message(STATUC "Basalt found. Basalt Support enabled")
+        message(STATUS "Basalt found. Basalt Support enabled")
     else()
         message(WARNING "Basalt not found. Basalt Support disabled")
     endif()
@@ -266,13 +271,17 @@ set(TARGET_CORE_SOURCES
     "${DEPTHAI_BOOTLOADER_SHARED_SOURCES}"
     # sources
     src/common/ModelType.cpp
+    src/device/CrashDump.cpp
+    src/device/CrashDumpManager.cpp
     src/device/Device.cpp
     src/device/DeviceBase.cpp
     src/device/DeviceBootloader.cpp
     # src/device/CallbackHandler.cpp
     src/device/CalibrationHandler.cpp
+    src/device/Platform.cpp
     src/device/Version.cpp
     src/pipeline/Pipeline.cpp
+    src/pipeline/PipelineStateApi.cpp
     src/pipeline/AssetManager.cpp
     src/pipeline/MessageQueue.cpp
     src/pipeline/Node.cpp
@@ -281,6 +290,8 @@ set(TARGET_CORE_SOURCES
     src/pipeline/ThreadedHostNode.cpp
     src/pipeline/DeviceNode.cpp
     src/pipeline/DeviceNodeGroup.cpp
+    src/pipeline/node/internal/PipelineEventAggregation.cpp
+    src/pipeline/node/internal/PipelineStateMerge.cpp
     src/pipeline/node/internal/XLinkIn.cpp
     src/pipeline/node/internal/XLinkOut.cpp
     src/pipeline/node/ColorCamera.cpp
@@ -311,6 +322,11 @@ set(TARGET_CORE_SOURCES
     src/pipeline/node/ImageAlign.cpp
     src/pipeline/node/ToF.cpp
     src/pipeline/node/DetectionParser.cpp
+    src/pipeline/node/SegmentationParser.cpp
+    src/pipeline/utilities/DetectionParser/DetectionParserUtils.cpp
+    src/pipeline/utilities/SpatialLocationCalculator/SpatialUtils.cpp
+    src/pipeline/utilities/Alignment/AlignmentUtilities.cpp
+    src/pipeline/utilities/SegmentationParser/SegmentationParserUtils.cpp
     src/pipeline/node/test/MyProducer.cpp
     src/pipeline/node/test/MyConsumer.cpp
     src/pipeline/node/UVC.cpp
@@ -318,12 +334,18 @@ set(TARGET_CORE_SOURCES
     src/pipeline/node/internal/XLinkOutHost.cpp
     src/pipeline/node/host/HostNode.cpp
     src/pipeline/node/host/RGBD.cpp
+    src/pipeline/node/Vpp.cpp
+    src/pipeline/node/Gate.cpp
     src/pipeline/datatype/DatatypeEnum.cpp
     src/pipeline/datatype/ADataType.cpp
     src/pipeline/node/PointCloud.cpp
+    src/pipeline/node/NeuralDepth.cpp
+    src/pipeline/node/NeuralAssistedStereo.cpp
+    src/pipeline/node/Rectification.cpp
     src/pipeline/datatype/Buffer.cpp
     src/pipeline/datatype/ImgFrame.cpp
     src/pipeline/datatype/ImgTransformations.cpp
+    src/pipeline/datatype/Extrinsics.cpp
     src/pipeline/datatype/EncodedFrame.cpp
     src/pipeline/datatype/ImgAnnotations.cpp
     src/pipeline/datatype/ImageManipConfig.cpp
@@ -332,18 +354,21 @@ set(TARGET_CORE_SOURCES
     src/pipeline/datatype/CameraControl.cpp
     src/pipeline/datatype/NNData.cpp
     src/pipeline/datatype/ImgDetectionsT.cpp
+    src/pipeline/datatype/SegmentationMask.cpp
     src/pipeline/datatype/ImgDetections.cpp
     src/pipeline/datatype/SpatialImgDetections.cpp
     src/pipeline/datatype/SystemInformation.cpp
-    src/pipeline/datatype/SystemInformationS3.cpp
+    src/pipeline/datatype/SystemInformationRVC4.cpp
     src/pipeline/datatype/StreamMessageParser.cpp
     src/pipeline/datatype/SpatialLocationCalculatorData.cpp
     src/pipeline/datatype/SpatialLocationCalculatorConfig.cpp
+    src/pipeline/datatype/SegmentationParserConfig.cpp
     src/pipeline/datatype/AprilTags.cpp
     src/pipeline/datatype/AprilTagConfig.cpp
     src/pipeline/datatype/Tracklets.cpp
     src/pipeline/datatype/IMUData.cpp
     src/pipeline/datatype/StereoDepthConfig.cpp
+    src/pipeline/datatype/NeuralDepthConfig.cpp
     src/pipeline/datatype/EdgeDetectorConfig.cpp
     src/pipeline/datatype/TrackedFeatures.cpp
     src/pipeline/datatype/FeatureTrackerConfig.cpp
@@ -352,12 +377,19 @@ set(TARGET_CORE_SOURCES
     src/pipeline/datatype/PointCloudConfig.cpp
     src/pipeline/datatype/ObjectTrackerConfig.cpp
     src/pipeline/datatype/PointCloudData.cpp
+    src/pipeline/datatype/PipelineEvent.cpp
+    src/pipeline/datatype/PipelineState.cpp
+    src/pipeline/datatype/PipelineEventAggregationConfig.cpp
     src/pipeline/datatype/RGBDData.cpp
+    src/pipeline/datatype/MapData.cpp
     src/pipeline/datatype/MessageGroup.cpp
     src/pipeline/datatype/ThermalConfig.cpp
     src/pipeline/datatype/TransformData.cpp
+    src/pipeline/datatype/PacketizedData.cpp
     src/properties/Properties.cpp
     src/capabilities/Capabilities.cpp
+    src/pipeline/datatype/VppConfig.cpp
+    src/pipeline/datatype/GateControl.cpp
     src/utility/H26xParsers.cpp
     src/utility/ImageManipImpl.cpp
     src/utility/ObjectTrackerImpl.cpp
@@ -368,6 +400,8 @@ set(TARGET_CORE_SOURCES
     src/utility/Initialization.cpp
     src/utility/Resources.cpp
     src/utility/Platform.cpp
+    src/utility/PipelineEventDispatcher.cpp
+    src/utility/PipelineImplHelper.cpp
     src/utility/RecordReplay.cpp
     src/utility/McapImpl.cpp
     src/utility/Environment.cpp
@@ -380,6 +414,7 @@ set(TARGET_CORE_SOURCES
     src/utility/LogCollection.cpp
     src/utility/MemoryWrappers.cpp
     src/utility/Serialization.cpp
+    src/utility/OCVPorts.cpp
     src/xlink/XLinkConnection.cpp
     src/xlink/XLinkStream.cpp
     src/openvino/OpenVINO.cpp
@@ -416,6 +451,9 @@ if(DEPTHAI_DYNAMIC_CALIBRATION_SUPPORT)
         src/pipeline/node/DynamicCalibrationNode.cpp
         src/pipeline/datatype/DynamicCalibrationResults.cpp
         src/pipeline/datatype/DynamicCalibrationControl.cpp
+        src/pipeline/node/AutoCalibration.cpp
+        src/pipeline/datatype/AutoCalibrationResult.cpp
+        src/pipeline/datatype/AutoCalibrationConfig.cpp
     )
 endif()
 
@@ -435,9 +473,9 @@ set(TARGET_PCL_SOURCES src/pcl/PointCloudData.cpp)
 set(TARGET_BASALT_SOURCES src/basalt/BasaltVIO.cpp)
 
 set(TARGET_RTABMAP_SOURCES
-    src/rtabmap/CalibrationHandler.cpp
-    src/rtabmap/TransformData.cpp
-    src/rtabmap/RTABMapVIO.cpp src/rtabmap/RTABMapSLAM.cpp
+    src/rtabmap/RTABMapConversions.cpp
+    src/rtabmap/RTABMapVIO.cpp
+    src/rtabmap/RTABMapSLAM.cpp
 )
 
 if(DEPTHAI_HAVE_OPENCV_SUPPORT AND DEPTHAI_MERGED_TARGET)
@@ -463,6 +501,18 @@ if(DEPTHAI_HAVE_RTABMAP_SUPPORT AND DEPTHAI_MERGED_TARGET)
     )
 endif()
 
+if(DEPTHAI_GENERATE_HOUSING_COORDS)
+    include(DepthaiGenerateHousingCoordinates)
+    DepthaiGenerateHousingCoordinates(
+        ${CMAKE_CURRENT_BINARY_DIR}/src/HousingCoordinates.cpp        # Output file
+        ${CMAKE_CURRENT_LIST_DIR}/shared/depthai_boards/batch/housing # Housing json directory
+    )
+    list(APPEND TARGET_CORE_SOURCES
+        ${CMAKE_CURRENT_BINARY_DIR}/src/HousingCoordinates.cpp
+    )
+endif()
+
+
 add_library(${TARGET_CORE_NAME} ${TARGET_CORE_SOURCES})
 add_library("${PROJECT_NAME}::${TARGET_CORE_ALIAS}" ALIAS ${TARGET_CORE_NAME})
 # Specify that we are building core
@@ -471,6 +521,10 @@ target_compile_definitions(${TARGET_CORE_NAME} PUBLIC DEPTHAI_TARGET_CORE)
 set_target_properties(${TARGET_CORE_NAME} PROPERTIES EXPORT_NAME ${TARGET_CORE_ALIAS})
 # Add to list of targets to export and install
 list(APPEND targets_to_export ${TARGET_CORE_NAME})
+
+if(DEPTHAI_GENERATE_HOUSING_COORDS)
+    target_compile_definitions(${TARGET_CORE_NAME} PUBLIC DEPTHAI_HAVE_HOUSING_COORDINATES)
+endif()
 
 if(DEPTHAI_BUILD_ZOO_HELPER)
     # Add model_zoo helper binary
@@ -542,7 +596,7 @@ endif()
 
 # Link merged target libraries and add compile definitions
 if(DEPTHAI_HAVE_OPENCV_SUPPORT AND DEPTHAI_MERGED_TARGET)
-    # Link to OpenCV (publically)
+    # Link to OpenCV (publicly)
     target_link_libraries(${TARGET_CORE_NAME} PUBLIC ${REQUIRED_OPENCV_LIBRARIES} ${THIRDPARTY_OPENCV_LIBRARIES})
 
     # Specify that we are building target opencv
@@ -551,7 +605,7 @@ if(DEPTHAI_HAVE_OPENCV_SUPPORT AND DEPTHAI_MERGED_TARGET)
 
 endif()
 if(DEPTHAI_HAVE_PCL_SUPPORT AND DEPTHAI_MERGED_TARGET)
-    # Link to PCL (publically)
+    # Link to PCL (publicly)
     target_link_libraries(${TARGET_CORE_NAME} PUBLIC ${PCL_LIBRARIES})
 
     # Specify that we are building target pcl
@@ -566,7 +620,7 @@ endif()
 
 if(DEPTHAI_HAVE_RTABMAP_SUPPORT AND DEPTHAI_MERGED_TARGET) 
     # Link to rtabmap
-    target_link_libraries(${TARGET_CORE_NAME} PUBLIC rtabmap::core ${THIRDPARTY_RTABMAP_LIBRARIES})
+    target_link_libraries(${TARGET_CORE_NAME} PRIVATE rtabmap::core ${THIRDPARTY_RTABMAP_LIBRARIES})
 
     # add compile defs
     target_compile_definitions(${TARGET_CORE_NAME} PUBLIC DEPTHAI_TARGET_RTABMAP)
@@ -576,7 +630,7 @@ endif()
 
 if(DEPTHAI_HAVE_BASALT_SUPPORT AND DEPTHAI_MERGED_TARGET)
     # Link to Basalt
-    target_link_libraries(${TARGET_CORE_NAME} PUBLIC ${THIRDPARTY_BASALT_LIBRARIES})
+    target_link_libraries(${TARGET_CORE_NAME} PRIVATE ${THIRDPARTY_BASALT_LIBRARIES})
 
     # add compile defs
     target_compile_definitions(${TARGET_CORE_NAME} PUBLIC DEPTHAI_TARGET_BASALT)
@@ -750,12 +804,14 @@ target_include_directories(${TARGET_CORE_NAME}
         "$<INSTALL_INTERFACE:include/${DEPTHAI_SHARED_3RDPARTY_HEADERS_PATH}>"
 
         # Build time path to include directories
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>"
         "$<BUILD_INTERFACE:${DEPTHAI_SHARED_PUBLIC_INCLUDE}>"
         "$<BUILD_INTERFACE:${DEPTHAI_BOOTLOADER_SHARED_PUBLIC_INCLUDE}>"
     #INTERFACE
     #    # ...
     PRIVATE
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/depthai>"
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include/depthai>"
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/src>"
         "$<BUILD_INTERFACE:${DEPTHAI_SHARED_INCLUDE}>"
@@ -942,7 +998,7 @@ if(DEPTHAI_HAVE_OPENCV_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
     # Add default flags
     add_default_flags(${TARGET_OPENCV_NAME})
 
-    # Link to OpenCV (publically)
+    # Link to OpenCV (publicly)
     target_link_libraries(${TARGET_OPENCV_NAME} PUBLIC ${REQUIRED_OPENCV_LIBRARIES} ${THIRDPARTY_OPENCV_LIBRARIES})
 
     # Specify that we are building target opencv
@@ -974,7 +1030,7 @@ if(DEPTHAI_HAVE_PCL_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
         # Add default flags
         add_default_flags(${TARGET_PCL_NAME})
 
-        # Link to PCL (publically)
+        # Link to PCL (publicly)
         target_link_libraries(${TARGET_PCL_NAME} PUBLIC ${PCL_LIBRARIES})
         target_link_libraries(${TARGET_PCL_NAME} PUBLIC pcl_io_ply)
 
@@ -1008,9 +1064,9 @@ if(DEPTHAI_HAVE_RTABMAP_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
     endif()
     # Add depthai-rtabmap library and depthai::rtabmap alias
     add_library(${TARGET_RTABMAP_NAME}
-    src/rtabmap/CalibrationHandler.cpp
-    src/rtabmap/TransformData.cpp
-    src/rtabmap/RTABMapVIO.cpp src/rtabmap/RTABMapSLAM.cpp
+    src/rtabmap/RTABMapConversions.cpp
+    src/rtabmap/RTABMapVIO.cpp 
+    src/rtabmap/RTABMapSLAM.cpp
     )
     add_library("${PROJECT_NAME}::${TARGET_RTABMAP_ALIAS}" ALIAS ${TARGET_RTABMAP_NAME})
     # Specifies name of generated IMPORTED target (set to alias)
@@ -1019,8 +1075,8 @@ if(DEPTHAI_HAVE_RTABMAP_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
     # Add default flags
     add_default_flags(${TARGET_RTABMAP_NAME})
     add_flag(${TARGET_RTABMAP_NAME} -Wno-switch-enum)
-    # Link to RTABMap (publically)
-    target_link_libraries(${TARGET_RTABMAP_NAME} PUBLIC rtabmap::core ${TARGET_OPENCV_NAME} ${TARGET_PCL_NAME} ${THIRDPARTY_RTABMAP_LIBRARIES} PRIVATE spdlog::spdlog)
+    # Link to RTABMap (publicly)
+    target_link_libraries(${TARGET_RTABMAP_NAME} PRIVATE rtabmap::core ${TARGET_OPENCV_NAME} ${TARGET_PCL_NAME} ${THIRDPARTY_RTABMAP_LIBRARIES} spdlog::spdlog)
 
     target_include_directories(${TARGET_RTABMAP_NAME} PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/src>")
     # Add public compile definition indicating that RTABMap support is available
@@ -1060,8 +1116,8 @@ if(DEPTHAI_HAVE_BASALT_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
     add_default_flags(${TARGET_BASALT_NAME})
     add_flag(${TARGET_BASALT_NAME} -Wno-switch-enum)
 
-    # Link to Basalt (publically)
-    target_link_libraries(${TARGET_BASALT_NAME} PUBLIC ${THIRDPARTY_BASALT_LIBRARIES} ${TARGET_OPENCV_NAME} PRIVATE spdlog::spdlog)
+    # Link to Basalt (publicly)
+    target_link_libraries(${TARGET_BASALT_NAME} PRIVATE ${THIRDPARTY_BASALT_LIBRARIES} ${TARGET_OPENCV_NAME} spdlog::spdlog)
     # Add public compile definition indicating that Basalt support is available
     set(DEPTHAI_HAVE_BASALT_SUPPORT ON)
 
@@ -1107,17 +1163,15 @@ endif()
 # Sanitizers
 ########################
 if(DEPTHAI_SANITIZE)
-    set(SANITIZE_ADDRESS ON CACHE BOOL "Enable AddressSanitizer for sanitized targets.")
-    set(SANITIZE_UNDEFINED ON CACHE BOOL "Enable UndefinedBehaviorSanitizer for sanitized targets.")
     find_package(Sanitizers)
     add_sanitizers(${TARGET_CORE_NAME})
     if(DEPTHAI_HAVE_OPENCV_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
         add_sanitizers(${TARGET_OPENCV_NAME})
     endif()
-    if(DEPTHAI_HAVE_RTABMAP_SUPPORT)
+    if(DEPTHAI_HAVE_RTABMAP_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
         add_sanitizers(${TARGET_RTABMAP_NAME})
     endif()
-    if(DEPTHAI_HAVE_BASALT_SUPPORT)
+    if(DEPTHAI_HAVE_BASALT_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
         add_sanitizers(${TARGET_BASALT_NAME})
     endif()
     if(DEPTHAI_HAVE_PCL_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
@@ -1212,7 +1266,12 @@ string(TIMESTAMP BUILD_DATETIME "%Y-%m-%d %H:%M:%S +0000" UTC)
 message(STATUS "BUILD_DATETIME: ${BUILD_DATETIME}, BUILD_COMMIT: ${BUILD_COMMIT}, BUILD_COMMIT_DATETIME: ${BUILD_COMMIT_DATETIME}")
 
 # Configure build information (version, opencv, pcl support)
-configure_file("${CMAKE_CURRENT_LIST_DIR}/cmake/version.hpp.in" "${CMAKE_CURRENT_LIST_DIR}/include/depthai/build/version.hpp")
+set(DEPTHAI_VERSION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/include/depthai/build/version.hpp")
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include/depthai/build")
+configure_file(
+    "${CMAKE_CURRENT_LIST_DIR}/cmake/version.hpp.in"
+    "${DEPTHAI_VERSION_HEADER}"
+)
 
 ########################
 # Export and install
@@ -1273,6 +1332,7 @@ if(DEPTHAI_INSTALL)
 
     # Install depthai public headers
     install(DIRECTORY include/depthai DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+    install(FILES "${DEPTHAI_VERSION_HEADER}" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/depthai/build")
     # Install depthai-bootloader-shared public headers
     install(DIRECTORY "${DEPTHAI_BOOTLOADER_SHARED_PUBLIC_INCLUDE}/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
     # Install resources if not RC'd

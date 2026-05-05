@@ -25,13 +25,29 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
 
     // Bindings
     calibrationHandler.def(py::init<>(), DOC(dai, CalibrationHandler, CalibrationHandler))
-        .def(py::init<std::filesystem::path>(), DOC(dai, CalibrationHandler, CalibrationHandler, 2))
-        .def(py::init<std::filesystem::path, std::filesystem::path>(), DOC(dai, CalibrationHandler, CalibrationHandler, 3))
-        .def(py::init<EepromData>(), DOC(dai, CalibrationHandler, CalibrationHandler, 4))
+        .def(py::init<std::filesystem::path, bool>(),
+             py::arg("eepromDataPath"),
+             py::arg("validateExtrinsics") = std::nullopt,
+             DOC(dai, CalibrationHandler, CalibrationHandler, 2))
+        .def(py::init<std::filesystem::path, std::filesystem::path, bool>(),
+             py::arg("calibrationDataPath"),
+             py::arg("boardConfigPath"),
+             py::arg("validateExtrinsics") = std::nullopt,
+             DOC(dai, CalibrationHandler, CalibrationHandler, 3))
+        .def(py::init<EepromData, bool>(),
+             py::arg("eepromData"),
+             py::arg("validateExtrinsics") = std::nullopt,
+             DOC(dai, CalibrationHandler, CalibrationHandler, 4))
 
-        .def_static("fromJson", &CalibrationHandler::fromJson, DOC(dai, CalibrationHandler, fromJson))
+        .def_static("fromJson",
+                    &CalibrationHandler::fromJson,
+                    py::arg("eepromDataJson"),
+                    py::arg("validateExtrinsics") = std::nullopt,
+                    DOC(dai, CalibrationHandler, fromJson))
 
         .def("getEepromData", &CalibrationHandler::getEepromData, DOC(dai, CalibrationHandler, getEepromData))
+        .def("hasCalibrationData", &CalibrationHandler::hasCalibrationData, DOC(dai, CalibrationHandler, hasCalibrationData))
+        .def("hasCameraCalibration", &CalibrationHandler::hasCameraCalibration, py::arg("cameraId"), DOC(dai, CalibrationHandler, hasCameraCalibration))
 
         .def("getCameraIntrinsics",
              py::overload_cast<CameraBoardSocket, int, int, Point2f, Point2f, bool>(&CalibrationHandler::getCameraIntrinsics, py::const_),
@@ -60,6 +76,8 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
              DOC(dai, CalibrationHandler, getCameraIntrinsics, 3))
 
         .def("getDefaultIntrinsics", &CalibrationHandler::getDefaultIntrinsics, py::arg("cameraId"), DOC(dai, CalibrationHandler, getDefaultIntrinsics))
+        .def("getSourceHeight", &CalibrationHandler::getSourceHeight, py::arg("cameraId"), DOC(dai, CalibrationHandler, getSourceHeight))
+        .def("getSourceWidth", &CalibrationHandler::getSourceWidth, py::arg("cameraId"), DOC(dai, CalibrationHandler, getSourceWidth))
         .def("getDistortionCoefficients",
              &CalibrationHandler::getDistortionCoefficients,
              py::arg("cameraId"),
@@ -68,19 +86,29 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
         .def("getFov", &CalibrationHandler::getFov, py::arg("cameraId"), py::arg("useSpec") = true, DOC(dai, CalibrationHandler, getFov))
         .def("getLensPosition", &CalibrationHandler::getLensPosition, py::arg("cameraId"), DOC(dai, CalibrationHandler, getLensPosition))
         .def("getDistortionModel", &CalibrationHandler::getDistortionModel, py::arg("cameraId"), DOC(dai, CalibrationHandler, getDistortionModel))
-
+        .def("getCameraWithLowestId", &CalibrationHandler::getCameraWithLowestId, DOC(dai, CalibrationHandler, getCameraWithLowestId))
         .def("getCameraExtrinsics",
              &CalibrationHandler::getCameraExtrinsics,
              py::arg("srcCamera"),
              py::arg("dstCamera"),
              py::arg("useSpecTranslation") = false,
+             py::arg("unit") = LengthUnit::CENTIMETER,
              DOC(dai, CalibrationHandler, getCameraExtrinsics))
+
+        .def("getHousingCalibration",
+             &CalibrationHandler::getHousingCalibration,
+             py::arg("srcCamera"),
+             py::arg("housingCS"),
+             py::arg("useSpecTranslation") = true,
+             py::arg("unit") = LengthUnit::CENTIMETER,
+             DOC(dai, CalibrationHandler, getHousingCalibration))
 
         .def("getCameraTranslationVector",
              &CalibrationHandler::getCameraTranslationVector,
              py::arg("srcCamera"),
              py::arg("dstCamera"),
              py::arg("useSpecTranslation") = true,
+             py::arg("unit") = LengthUnit::CENTIMETER,
              DOC(dai, CalibrationHandler, getCameraTranslationVector))
         .def("getCameraRotationMatrix",
              &CalibrationHandler::getCameraRotationMatrix,
@@ -92,17 +120,20 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
              py::arg("cam1") = dai::CameraBoardSocket::CAM_C,
              py::arg("cam2") = dai::CameraBoardSocket::CAM_B,
              py::arg("useSpecTranslation") = true,
+             py::arg("unit") = LengthUnit::CENTIMETER,
              DOC(dai, CalibrationHandler, getBaselineDistance))
 
         .def("getCameraToImuExtrinsics",
              &CalibrationHandler::getCameraToImuExtrinsics,
              py::arg("cameraId"),
              py::arg("useSpecTranslation") = false,
+             py::arg("unit") = LengthUnit::CENTIMETER,
              DOC(dai, CalibrationHandler, getCameraToImuExtrinsics))
         .def("getImuToCameraExtrinsics",
              &CalibrationHandler::getImuToCameraExtrinsics,
              py::arg("cameraId"),
              py::arg("useSpecTranslation") = false,
+             py::arg("unit") = LengthUnit::CENTIMETER,
              DOC(dai, CalibrationHandler, getImuToCameraExtrinsics))
 
         .def("getStereoRightRectificationRotation",
@@ -113,6 +144,10 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
              DOC(dai, CalibrationHandler, getStereoLeftRectificationRotation))
         .def("getStereoLeftCameraId", &CalibrationHandler::getStereoLeftCameraId, DOC(dai, CalibrationHandler, getStereoLeftCameraId))
         .def("getStereoRightCameraId", &CalibrationHandler::getStereoRightCameraId, DOC(dai, CalibrationHandler, getStereoRightCameraId))
+        .def("getAccelerometerCalibration", &CalibrationHandler::getAccelerometerCalibration, DOC(dai, CalibrationHandler, getAccelerometerCalibration))
+        .def("getGyroscopeCalibration", &CalibrationHandler::getGyroscopeCalibration, DOC(dai, CalibrationHandler, getGyroscopeCalibration))
+        .def("getImuNoiseParameters", &CalibrationHandler::getImuNoiseParameters, DOC(dai, CalibrationHandler, getImuNoiseParameters))
+        .def("getImuParameters", &CalibrationHandler::getImuParameters, DOC(dai, CalibrationHandler, getImuParameters))
 
         .def("eepromToJsonFile", &CalibrationHandler::eepromToJsonFile, py::arg("destPath"), DOC(dai, CalibrationHandler, eepromToJsonFile))
         .def("eepromToJson", &CalibrationHandler::eepromToJson, DOC(dai, CalibrationHandler, eepromToJson))
@@ -209,5 +244,18 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
              &CalibrationHandler::setStereoRight,
              py::arg("cameraId"),
              py::arg("rectifiedRotation"),
-             DOC(dai, CalibrationHandler, setStereoRight));
+             DOC(dai, CalibrationHandler, setStereoRight))
+        .def("setAccelerometerCalibration",
+             &CalibrationHandler::setAccelerometerCalibration,
+             py::arg("calibration"),
+             DOC(dai, CalibrationHandler, setAccelerometerCalibration))
+        .def("setGyroscopeCalibration",
+             &CalibrationHandler::setGyroscopeCalibration,
+             py::arg("calibration"),
+             DOC(dai, CalibrationHandler, setGyroscopeCalibration))
+        .def("setImuParameters", &CalibrationHandler::setImuParameters, py::arg("imuParameters"), DOC(dai, CalibrationHandler, setImuParameters))
+        .def("validateCalibrationHandler",
+             &CalibrationHandler::validateCalibrationHandler,
+             py::arg("throwOnError") = true,
+             DOC(dai, CalibrationHandler, validateCalibrationHandler));
 }

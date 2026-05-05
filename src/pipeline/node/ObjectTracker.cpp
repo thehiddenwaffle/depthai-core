@@ -1,5 +1,6 @@
 #include "depthai/pipeline/node/ObjectTracker.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -52,6 +53,18 @@ void ObjectTracker::setTrackletMaxLifespan(uint32_t trackletMaxLifespan) {
 void ObjectTracker::setTrackletBirthThreshold(uint32_t trackletBirthThreshold) {
     properties.trackletBirthThreshold = trackletBirthThreshold;
 }
+void ObjectTracker::setSpatialAssociation(bool enabled) {
+    properties.spatialAssociation = enabled;
+}
+void ObjectTracker::setSpatialAssociationWeight(float weight) {
+    properties.spatialAssociationWeight = std::clamp(weight, 0.0f, 1.0f);
+}
+void ObjectTracker::setSpatialDistanceThreshold(float thresholdMeters) {
+    properties.spatialDistanceThreshold = std::max(thresholdMeters, 0.001f);
+}
+void ObjectTracker::setSpatialDepthAwareScale(float scale) {
+    properties.spatialDepthAwareScale = std::max(scale, 0.0f);
+}
 void ObjectTracker::setRunOnHost(bool runOnHost) {
     runOnHostVar = runOnHost;
 }
@@ -98,7 +111,7 @@ void ObjectTracker::run() {
 
     impl::OCSTracker tracker(properties);
 
-    while(isRunning()) {
+    while(mainLoop()) {
         std::shared_ptr<ImgFrame> inputTrackerImg;
         std::shared_ptr<ImgFrame> inputDetectionImg;
         std::shared_ptr<ImgDetections> inputImgDetections;
@@ -106,9 +119,11 @@ void ObjectTracker::run() {
         std::shared_ptr<ObjectTrackerConfig> inputCfg;
 
         bool gotDetections = false;
+        {
+            auto blockEvent = this->inputBlockEvent();
 
-        inputTrackerImg = inputTrackerFrame.get<ImgFrame>();
-        if(inputDetections.has()) {
+            inputTrackerImg = inputTrackerFrame.get<ImgFrame>();
+
             auto detectionsBuffer = inputDetections.get<Buffer>();
             inputImgDetections = std::dynamic_pointer_cast<ImgDetections>(detectionsBuffer);
             inputSpatialImgDetections = std::dynamic_pointer_cast<SpatialImgDetections>(detectionsBuffer);
@@ -124,14 +139,14 @@ void ObjectTracker::run() {
                     logger->debug("Transformation is not set for input detections, inputDetectionFrame is required");
                     inputDetectionImg = inputDetectionFrame.get<ImgFrame>();
                 }
-            } else if(!inputImgDetections && !inputSpatialImgDetections) {
+            } else {
                 logger->error("Input detections is not of type ImgDetections or SpatialImgDetections, skipping tracking");
             }
-        }
-        if(inputConfig.getWaitForMessage()) {
-            inputCfg = inputConfig.get<ObjectTrackerConfig>();
-        } else {
-            inputCfg = inputConfig.tryGet<ObjectTrackerConfig>();
+            if(inputConfig.getWaitForMessage()) {
+                inputCfg = inputConfig.get<ObjectTrackerConfig>();
+            } else {
+                inputCfg = inputConfig.tryGet<ObjectTrackerConfig>();
+            }
         }
 
         if(inputCfg) {
@@ -154,7 +169,7 @@ void ObjectTracker::run() {
             }
 
             for(size_t i = 0; i < (inputImgDetections ? inputImgDetections->detections.size() : inputSpatialImgDetections->detections.size()); ++i) {
-                const auto& detection = inputImgDetections ? inputImgDetections->detections[i] : (ImgDetection)inputSpatialImgDetections->detections[i];
+                const auto& detection = inputImgDetections ? inputImgDetections->detections[i] : inputSpatialImgDetections->detections[i].getImgDetection();
                 if(detection.confidence >= trackerThreshold && (detectionLabelsToTrack.empty() || contains(detectionLabelsToTrack, detection.label))) {
                     // Denormalize and remap to inputTrackerImg
                     uint32_t width = detectionsTransformation.getSize().first;
@@ -202,13 +217,17 @@ void ObjectTracker::run() {
         }
         trackletsMsg->transformation = inputTrackerImg->transformation;
 
-        out.send(trackletsMsg);
-        passthroughTrackerFrame.send(inputTrackerImg);
-        if(gotDetections) {
-            passthroughDetections.send(inputImgDetections ? std::dynamic_pointer_cast<Buffer>(inputImgDetections)
-                                                          : std::dynamic_pointer_cast<Buffer>(inputSpatialImgDetections));
-            if(inputDetectionImg) {
-                passthroughDetectionFrame.send(inputDetectionImg);
+        {
+            auto blockEvent = this->outputBlockEvent();
+
+            out.send(trackletsMsg);
+            passthroughTrackerFrame.send(inputTrackerImg);
+            if(gotDetections) {
+                passthroughDetections.send(inputImgDetections ? std::dynamic_pointer_cast<Buffer>(inputImgDetections)
+                                                              : std::dynamic_pointer_cast<Buffer>(inputSpatialImgDetections));
+                if(inputDetectionImg) {
+                    passthroughDetectionFrame.send(inputDetectionImg);
+                }
             }
         }
     }

@@ -1,7 +1,15 @@
+#include <atomic>
+#include <csignal>
 #include <iostream>
 #include <opencv2/opencv.hpp>
 
 #include "depthai/depthai.hpp"
+
+std::atomic<bool> quitEvent(false);
+
+void signalHandler(int) {
+    quitEvent = true;
+}
 
 // Helper function to draw rotated rectangle
 void drawRotatedRectangle(cv::Mat& frame, const cv::Point2f& center, const cv::Size2f& size, float angle, const cv::Scalar& color, int thickness = 2) {
@@ -29,12 +37,12 @@ cv::Mat processDepthFrame(const cv::Mat& depthFrame) {
 
     double min_depth = 0;
     if(!cv::countNonZero(depth_downscaled == 0)) {
-        std::vector<float> nonZeroDepth;
+        std::vector<uint16_t> nonZeroDepth;
         nonZeroDepth.reserve(depth_downscaled.rows * depth_downscaled.cols);
 
         for(int i = 0; i < depth_downscaled.rows; i++) {
             for(int j = 0; j < depth_downscaled.cols; j++) {
-                float depth = depth_downscaled.at<float>(i, j);
+                uint16_t depth = depth_downscaled.at<uint16_t>(i, j);
                 if(depth > 0) nonZeroDepth.push_back(depth);
             }
         }
@@ -45,11 +53,11 @@ cv::Mat processDepthFrame(const cv::Mat& depthFrame) {
         }
     }
 
-    std::vector<float> allDepth;
+    std::vector<uint16_t> allDepth;
     allDepth.reserve(depth_downscaled.rows * depth_downscaled.cols);
     for(int i = 0; i < depth_downscaled.rows; i++) {
         for(int j = 0; j < depth_downscaled.cols; j++) {
-            allDepth.push_back(depth_downscaled.at<float>(i, j));
+            allDepth.push_back(depth_downscaled.at<uint16_t>(i, j));
         }
     }
     std::sort(allDepth.begin(), allDepth.end());
@@ -64,6 +72,9 @@ cv::Mat processDepthFrame(const cv::Mat& depthFrame) {
 }
 
 int main() {
+    signal(SIGTERM, signalHandler);
+    signal(SIGINT, signalHandler);
+
     // Create pipeline
     dai::Pipeline pipeline;
 
@@ -101,7 +112,7 @@ int main() {
 
     pipeline.start();
 
-    while(pipeline.isRunning()) {
+    while(pipeline.isRunning() && !quitEvent) {
         auto colorFrame = colorOut->get<dai::ImgFrame>();
         auto stereoFrame = stereoOut->get<dai::ImgFrame>();
 
@@ -144,6 +155,9 @@ int main() {
             break;
         }
     }
+
+    pipeline.stop();
+    pipeline.wait();
 
     return 0;
 }

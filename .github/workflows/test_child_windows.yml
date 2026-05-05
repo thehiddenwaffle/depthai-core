@@ -5,6 +5,10 @@ on:
       luxonis_os_versions_to_test:
         required: true
         type: string
+      luxonis_os_versions_to_test_usb:
+        required: false
+        type: string
+        default: "[]"
     secrets:
       CONTAINER_REGISTRY:
         required: true
@@ -23,29 +27,57 @@ jobs:
       VCPKG_DEFAULT_TRIPLET: x64-windows
       VCPKG_DOWNLOADS: C:\vcpkg_downloads
       VCPKG_DEFAULT_BINARY_CACHE: C:\vcpkg_binaries
+      VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg_binaries,readwrite
     steps:
+    - name: Decide kind of test (long/short)
+      id: kind
+      shell: pwsh
+      run: |
+        if ("${{ github.event_name }}" -eq "pull_request") {
+          "test_kind=short" >> $env:GITHUB_OUTPUT
+        } else {
+          "test_kind=long" >> $env:GITHUB_OUTPUT
+        }
 
-    - name: Try reusing existing artifact for this commit
+    - name: Try reusing existing artifact for this commit (repo-wide)
       id: reuse
       shell: pwsh
       env:
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.repository }}
-        RUN_ID: ${{ github.run_id }}
-        ARTIFACT_NAME: depthai-core-win-${{ github.sha }}
+        ARTIFACT_NAME: depthai-core-win-${{ github.sha }}-${{ steps.kind.outputs.test_kind }}
       run: |
-        Write-Host "REPO=$env:REPO  RUN_ID=$env:RUN_ID  NAME=$env:ARTIFACT_NAME"
-        $id = gh api "repos/$env:REPO/actions/runs/$env:RUN_ID/artifacts" `
-          --jq ".artifacts[] | select(.name==""$env:ARTIFACT_NAME"" and .expired==false) | .id"
-        if ($id) {
-          "skip_build=true"  >> $env:GITHUB_OUTPUT
-          "artifact_id=$id"  >> $env:GITHUB_OUTPUT
-          Write-Host "Found artifact id=$id on this run; skipping build."
-        } else {
-          "skip_build=false" >> $env:GITHUB_OUTPUT
-          Write-Host "No artifact named $env:ARTIFACT_NAME on this run."
+        $ErrorActionPreference = "Stop"
+
+        Write-Host "Repo:         $env:REPO"
+        Write-Host "ArtifactName: $env:ARTIFACT_NAME"
+        Write-Host ""
+
+        $jsonLines = gh api --paginate "repos/$env:REPO/actions/artifacts?per_page=100" `
+          --jq '.artifacts[] | @json' |
+          Select-Object -First 2500
+
+        $match = $null
+        foreach ($line in $jsonLines) {
+          $a = $line | ConvertFrom-Json
+
+          # Optional micro-filter to reduce comparisons
+          if ($a.name -notlike "depthai-core-win-*") { continue }
+
+          if ($a.name -eq $env:ARTIFACT_NAME -and $a.expired -eq $false) {
+            $match = $a
+            break
+          }
         }
 
+        if ($match) {
+          Write-Host "Found artifact id=$($match.id); skipping build."
+          "skip_build=true"  >> $env:GITHUB_OUTPUT
+          "artifact_id=$($match.id)" >> $env:GITHUB_OUTPUT
+        } else {
+          Write-Host "No existing non-expired artifact named $env:ARTIFACT_NAME found in newest 2500 artifacts."
+          "skip_build=false" >> $env:GITHUB_OUTPUT
+        }
 
     - name: Checkout depthai
       uses: actions/checkout@v4
@@ -62,14 +94,13 @@ jobs:
         Write-Host "Copying source from $env:GITHUB_WORKSPACE to C:\depthai-core ..."
         Copy-Item -Path "$env:GITHUB_WORKSPACE\*" -Destination "C:\depthai-core" -Recurse -Force
 
-    - name: Cache vcpkg binary cache
-      uses: actions/cache@v4
+    - name: Restore vcpkg cache
       if: steps.reuse.outputs.skip_build != 'true'
+      uses: actions/cache/restore@v4
+      id: vcpkg-restore
       with:
         path: C:\vcpkg_binaries
         key: vcpkg-archives-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_DEFAULT_TRIPLET }}
-        restore-keys: |
-          vcpkg-archives-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_DEFAULT_TRIPLET }}
 
     - name: Configure and Build
       if: steps.reuse.outputs.skip_build != 'true'
@@ -87,7 +118,7 @@ jobs:
         pip install --upgrade pip
         pip install numpy pytest pytest-html
         $buildDir = 'C:/depthai-core/build'
-        $overlay  = 'C:/depthai-core/cmake/triplets/release'  # make it absolute
+        $overlay  = 'C:/depthai-core/cmake/triplets/release'
         $isPR = "${{ github.head_ref }}" -ne ""
         $extraFlags = ""
 
@@ -121,12 +152,19 @@ jobs:
         Write-Host "Running: $cmakeBuildCommand"
         Invoke-Expression $cmakeBuildCommand
 
+    - name: Save vcpkg cache (refresh)
+      if: ${{ github.event_name != 'pull_request' && steps.reuse.outputs.skip_build != 'true' }}
+      uses: actions/cache/save@v4
+      with:
+        path: C:\vcpkg_binaries
+        key: vcpkg-archives-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-${{ env.VCPKG_DEFAULT_TRIPLET }}
+
     - name: Upload artifact
       if: steps.reuse.outputs.skip_build != 'true'
       id: artifact-upload-step
       uses: actions/upload-artifact@v4
       with:
-        name: depthai-core-win-${{ github.sha }}
+        name: depthai-core-win-${{ github.sha }}-${{ steps.kind.outputs.test_kind }}
         path: C:\depthai-core
         retention-days: 1
 
@@ -138,9 +176,97 @@ jobs:
         fail-fast: false
     runs-on: ['self-hosted', 'testbed-runner']
     steps:
-
       - name: Run RVC4 tests
         run: |
           source scripts/hil/prepare_hil_framework.sh ${{ secrets.HIL_PAT_TOKEN }}
           export RESERVATION_NAME="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#rvc4-windows-${{ matrix.rvc4os }}"
-          exec hil --models "oak4_pro or oak4_d" -os windows --reservation-name $RESERVATION_NAME --wait --rvc4-os-version ${{ matrix.rvc4os }} --commands "rmdir /S /Q depthai-core & git clone https://github.com/luxonis/depthai-core.git && cd depthai-core && git fetch origin ${{ github.sha }} && git checkout ${{ github.sha }} && scripts\hil\get_artifacts_and_run_tests.cmd \"${{ github.repository }}\" \"${{ github.token }}\" \"C:\depthai-core\" \"${{ needs.build_windows_tests.outputs.artifact_id }}\""
+          set -o pipefail
+          hil --models "oak4_pro or oak4_d" -os windows --no-shell --reservation-name $RESERVATION_NAME --wait --rvc4-os-version ${{ matrix.rvc4os }} --commands "rmdir /S /Q depthai-core & git clone https://github.com/luxonis/depthai-core.git && cd depthai-core && git fetch origin ${{ github.sha }} && git checkout ${{ github.sha }} && scripts\hil\get_artifacts_and_run_tests.cmd \"${{ github.repository }}\" \"${{ github.token }}\" \"C:\depthai-core\" \"${{ needs.build_windows_tests.outputs.artifact_id }}\" \"rvc4\"" 2>&1 | tee windows_rvc4_test_output.log
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-log-windows-rvc4_test-rvc4os=${{ matrix.rvc4os }}
+          path: windows_rvc4_test_output.log
+          if-no-files-found: warn
+
+  run_windows_tests_rvc4_usb:
+    needs: [build_windows_tests]
+    strategy:
+        matrix:
+          rvc4os: ${{ fromJson(inputs.luxonis_os_versions_to_test_usb) }}
+        fail-fast: false
+    runs-on: ['self-hosted', 'testbed-runner']
+    steps:
+      - name: Run RVC4 tests
+        run: |
+          source scripts/hil/prepare_hil_framework.sh ${{ secrets.HIL_PAT_TOKEN }}
+          export RESERVATION_NAME="https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#rvc4-windows-${{ matrix.rvc4os }}-usb"
+          set -o pipefail
+          hil --models "oak4_pro or oak4_d" -os windows --no-shell --reservation-name $RESERVATION_NAME --wait --rvc4-os-version ${{ matrix.rvc4os }} --commands "rmdir /S /Q depthai-core & git clone https://github.com/luxonis/depthai-core.git && cd depthai-core && git fetch origin ${{ github.sha }} && git checkout ${{ github.sha }} && scripts\hil\get_artifacts_and_run_tests.cmd \"${{ github.repository }}\" \"${{ github.token }}\" \"C:\depthai-core\" \"${{ needs.build_windows_tests.outputs.artifact_id }}\" \"rvc4usb\"" 2>&1 | tee windows_rvc4_usb_test_output.log
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-log-windows-rvc4_usb_test-rvc4os=${{ matrix.rvc4os }}
+          path: windows_rvc4_usb_test_output.log
+          if-no-files-found: warn
+
+  report_windows_test_results:
+    name: Report Windows test results
+    needs: [run_windows_tests_rvc4, run_windows_tests_rvc4_usb]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v3
+    - name: Download test logs
+      uses: actions/download-artifact@v4
+      with:
+        pattern: ctest-log-windows-*
+        path: ctest-logs
+    - name: Generate combined summary
+      run: |
+        if ! command -v python3 >/dev/null 2>&1; then
+          echo "python3 not available, skipping test summary." >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+
+        shopt -s nullglob
+        found_logs=0
+        first_summary=1
+        mkdir -p ctest-reports
+        artifact_prefix="ctest-log-windows-"
+        for dir in ctest-logs/${artifact_prefix}*; do
+          [ -d "$dir" ] || continue
+          log_files=("$dir"/*.log)
+          [ ${#log_files[@]} -gt 0 ] || continue
+          found_logs=1
+          context="$(basename "$dir")"
+          context="${context#${artifact_prefix}}"
+          if [ "$first_summary" -eq 0 ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "---" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          first_summary=0
+          python3 scripts/ci/ctest_summary.py "${log_files[0]}" "$context" >> "$GITHUB_STEP_SUMMARY"
+          report_context="${context//\//_}"
+          report_context="${report_context// /_}"
+          python3 scripts/ci/ctest_to_junit.py "${log_files[0]}" "ctest-reports/${report_context}.xml" "$context"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+        done
+
+        if [ "$found_logs" -eq 0 ]; then
+          echo "No test logs found to summarize." >> "$GITHUB_STEP_SUMMARY"
+        fi
+    - name: Upload JUnit XML reports
+      if: always() && hashFiles('ctest-reports/*.xml') != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: junit-reports-windows
+        path: ctest-reports/*.xml
+        if-no-files-found: warn

@@ -3,6 +3,8 @@
 #include <stdexcept>
 
 #include "depthai/pipeline/datatype/ImageManipConfig.hpp"
+#include "depthai/utility/OCVPorts.hpp"
+#include "depthai/utility/matrixOps.hpp"
 
 #ifdef DEPTHAI_HAVE_OPENCV_SUPPORT
     #include <opencv2/calib3d.hpp>
@@ -13,6 +15,9 @@
 #else
     #define _RESTRICT __restrict__
 #endif
+
+constexpr size_t MAX_AUTO_WIDTH = 4000;
+constexpr size_t MAX_AUTO_HEIGHT = 3000;
 
 void dai::impl::transformOpenCV(const uint8_t* src,
                                 uint8_t* dst,
@@ -494,88 +499,8 @@ std::vector<std::array<float, 2>> dai::impl::getHull(const std::vector<std::arra
     return hull;
 }
 
-std::array<std::array<float, 2>, 2> dai::impl::getInverse(const std::array<std::array<float, 2>, 2> mat) {
-    auto det = mat[0][0] * mat[1][1] - mat[0][1] * mat[1][0];
-    if(det == 0) {
-        throw std::runtime_error("Determinant is zero");
-    }
-    return {{{mat[1][1] / det, -mat[0][1] / det}, {-mat[1][0] / det, mat[0][0] / det}}};
-}
-
-std::array<std::array<float, 3>, 3> dai::impl::getInverse(const std::array<std::array<float, 3>, 3>& matrix) {
-    std::array<std::array<float, 3>, 3> inv;
-    float det = matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
-                - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
-                + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
-
-    if(det == 0) {
-        throw std::runtime_error("Matrix is singular and cannot be inverted.");
-    }
-
-    std::array<std::array<float, 3>, 3> adj;
-
-    adj[0][0] = (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]);
-    adj[0][1] = -(matrix[0][1] * matrix[2][2] - matrix[0][2] * matrix[2][1]);
-    adj[0][2] = (matrix[0][1] * matrix[1][2] - matrix[0][2] * matrix[1][1]);
-
-    adj[1][0] = -(matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0]);
-    adj[1][1] = (matrix[0][0] * matrix[2][2] - matrix[0][2] * matrix[2][0]);
-    adj[1][2] = -(matrix[0][0] * matrix[1][2] - matrix[0][2] * matrix[1][0]);
-
-    adj[2][0] = (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
-    adj[2][1] = -(matrix[0][0] * matrix[2][1] - matrix[0][1] * matrix[2][0]);
-    adj[2][2] = (matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0]);
-
-    float invDet = 1.0f / det;
-
-    for(int i = 0; i < 3; ++i) {
-        for(int j = 0; j < 3; ++j) {
-            inv[i][j] = adj[i][j] * invDet;
-        }
-    }
-
-    return inv;
-}
-
-std::array<std::array<float, 2>, 4> dai::impl::getOuterRotatedRect(const std::vector<std::array<float, 2>>& points) {
-    auto hull = getHull(points);
-    float minArea = std::numeric_limits<float>::max();
-    std::array<std::array<float, 2>, 4> minAreaPoints;
-
-    for(size_t i = 1; i < hull.size(); ++i) {
-        std::array<float, 2> vec = {hull[i][0] - hull[i - 1][0], hull[i][1] - hull[i - 1][1]};
-        std::array<float, 2> vecOrth = {-vec[1], vec[0]};
-        float len = sqrtf(vec[0] * vec[0] + vec[1] * vec[1]);
-        vec[0] /= len;
-        vec[1] /= len;
-        vecOrth[0] /= len;
-        vecOrth[1] /= len;
-        std::array<std::array<float, 2>, 2> mat = {{{vec[0], vecOrth[0]}, {vec[1], vecOrth[1]}}};
-        std::array<std::array<float, 2>, 2> matInv = getInverse(mat);
-
-        std::vector<std::array<float, 2>> rotatedHull;
-        for(const auto& pt : hull) {
-            float newX = matInv[0][0] * pt[0] + matInv[0][1] * pt[1];
-            float newY = matInv[1][0] * pt[0] + matInv[1][1] * pt[1];
-            rotatedHull.push_back({newX, newY});
-        }
-
-        const auto [minx, maxx, miny, maxy] = getOuterRect(rotatedHull);
-        float area = (maxx - minx) * (maxy - miny);
-
-        if(area < minArea) {
-            minArea = area;
-            std::array<std::array<float, 2>, 4> rectPoints = {{{minx, miny}, {maxx, miny}, {maxx, maxy}, {minx, maxy}}};
-            for(auto i = 0U; i < rectPoints.size(); ++i) {
-                auto& pt = rectPoints[i];
-                float origX = mat[0][0] * pt[0] + mat[0][1] * pt[1];
-                float origY = mat[1][0] * pt[0] + mat[1][1] * pt[1];
-                minAreaPoints[i] = {origX, origY};
-            }
-        }
-    }
-
-    return minAreaPoints;
+dai::RotatedRect dai::impl::getOuterRotatedRect(const std::vector<std::array<float, 2>>& points) {
+    return utility::getOuterRotatedRect(points);
 }
 
 std::array<std::array<float, 3>, 3> dai::impl::getResizeMat(Resize o, float width, float height, uint32_t outputWidth, uint32_t outputHeight) {
@@ -653,12 +578,15 @@ void dai::impl::getOutputSizeFromCorners(const std::array<std::array<float, 2>, 
     float rmaxx = srcOuterMaxx >= srcWidth && srcInnerMaxx < srcWidth ? innerMaxx : outerMaxx;
     float rminy = srcOuterMiny < 0 && srcInnerMiny >= 0 ? innerMiny : outerMiny;
     float rmaxy = srcOuterMaxy >= srcHeight && srcInnerMaxy < srcHeight ? innerMaxy : outerMaxy;
+
+    if(outputWidth > 0 && outputHeight > 0) return;
+
     if(!center) {
-        if(outputWidth == 0) outputWidth = rmaxx;
-        if(outputHeight == 0) outputHeight = rmaxy;
+        if(outputWidth == 0) outputWidth = std::min((size_t)rmaxx, MAX_AUTO_WIDTH);
+        if(outputHeight == 0) outputHeight = std::min((size_t)rmaxy, MAX_AUTO_HEIGHT);
     } else {
-        if(outputWidth == 0) outputWidth = rmaxx - rminx;
-        if(outputHeight == 0) outputHeight = rmaxy - rminy;
+        if(outputWidth == 0) outputWidth = std::min((size_t)std::max(rmaxx - rminx, 0.f), MAX_AUTO_WIDTH);
+        if(outputHeight == 0) outputHeight = std::min((size_t)std::max(rmaxy - rminy, 0.f), MAX_AUTO_HEIGHT);
     }
 }
 
@@ -742,29 +670,29 @@ void dai::impl::getTransformImpl(const ManipOp& op,
                                o.dst[i].x *= width;
                                o.dst[i].y *= height;
                            }
-#if defined(DEPTHAI_HAVE_FASTCV_SUPPORT)
-                           std::array<float, 9> coeff = {};
-                           std::array<float, 8> srcData = {o.src[0].x, o.src[0].y, o.src[1].x, o.src[1].y, o.src[2].x, o.src[2].y, o.src[3].x, o.src[3].y};
-                           std::array<float, 8> dstData = {o.dst[0].x, o.dst[0].y, o.dst[1].x, o.dst[1].y, o.dst[2].x, o.dst[2].y, o.dst[3].x, o.dst[3].y};
-                           fcvGetPerspectiveTransformf32(srcData.data(), dstData.data(), coeff.data());
-                           mat = {{{coeff[0], coeff[1], coeff[2]}, {coeff[3], coeff[4], coeff[5]}, {coeff[6], coeff[7], coeff[8]}}};
-#elif defined(DEPTHAI_HAVE_OPENCV_SUPPORT)
-                           cv::Point2f srcPoints[4] = {cv::Point2f(o.src[0].x, o.src[0].y),
-                                                       cv::Point2f(o.src[1].x, o.src[1].y),
-                                                       cv::Point2f(o.src[2].x, o.src[2].y),
-                                                       cv::Point2f(o.src[3].x, o.src[3].y)};
-                           cv::Point2f dstPoints[4] = {cv::Point2f(o.dst[0].x, o.dst[0].y),
-                                                       cv::Point2f(o.dst[1].x, o.dst[1].y),
-                                                       cv::Point2f(o.dst[2].x, o.dst[2].y),
-                                                       cv::Point2f(o.dst[3].x, o.dst[3].y)};
-                           cv::Mat cvMat = cv::getPerspectiveTransform(srcPoints, dstPoints);
-                           mat = {{{(float)cvMat.at<double>(0, 0), (float)cvMat.at<double>(0, 1), (float)cvMat.at<double>(0, 2)},
-                                   {(float)cvMat.at<double>(1, 0), (float)cvMat.at<double>(1, 1), (float)cvMat.at<double>(1, 2)},
-                                   {(float)cvMat.at<double>(2, 0), (float)cvMat.at<double>(2, 1), (float)cvMat.at<double>(2, 2)}}};
-#else
-                           throw std::runtime_error("FourPoints not supported without OpenCV or FastCV enabled");
-#endif
                        }
+#if defined(DEPTHAI_HAVE_FASTCV_SUPPORT)
+                       std::array<float, 9> coeff = {};
+                       std::array<float, 8> srcData = {o.src[0].x, o.src[0].y, o.src[1].x, o.src[1].y, o.src[2].x, o.src[2].y, o.src[3].x, o.src[3].y};
+                       std::array<float, 8> dstData = {o.dst[0].x, o.dst[0].y, o.dst[1].x, o.dst[1].y, o.dst[2].x, o.dst[2].y, o.dst[3].x, o.dst[3].y};
+                       fcvGetPerspectiveTransformf32(srcData.data(), dstData.data(), coeff.data());
+                       mat = {{{coeff[0], coeff[1], coeff[2]}, {coeff[3], coeff[4], coeff[5]}, {coeff[6], coeff[7], coeff[8]}}};
+#elif defined(DEPTHAI_HAVE_OPENCV_SUPPORT)
+                       cv::Point2f srcPoints[4] = {cv::Point2f(o.src[0].x, o.src[0].y),
+                                                   cv::Point2f(o.src[1].x, o.src[1].y),
+                                                   cv::Point2f(o.src[2].x, o.src[2].y),
+                                                   cv::Point2f(o.src[3].x, o.src[3].y)};
+                       cv::Point2f dstPoints[4] = {cv::Point2f(o.dst[0].x, o.dst[0].y),
+                                                   cv::Point2f(o.dst[1].x, o.dst[1].y),
+                                                   cv::Point2f(o.dst[2].x, o.dst[2].y),
+                                                   cv::Point2f(o.dst[3].x, o.dst[3].y)};
+                       cv::Mat cvMat = cv::getPerspectiveTransform(srcPoints, dstPoints);
+                       mat = {{{(float)cvMat.at<double>(0, 0), (float)cvMat.at<double>(0, 1), (float)cvMat.at<double>(0, 2)},
+                               {(float)cvMat.at<double>(1, 0), (float)cvMat.at<double>(1, 1), (float)cvMat.at<double>(1, 2)},
+                               {(float)cvMat.at<double>(2, 0), (float)cvMat.at<double>(2, 1), (float)cvMat.at<double>(2, 2)}}};
+#else
+                       mat = matrix::getHomographyMatrix(o.src, o.dst);
+#endif
                    },
                    [&](Affine o) { mat = {{{o.matrix[0], o.matrix[1], 0}, {o.matrix[2], o.matrix[3], 0}, {0, 0, 1}}}; },
                    [&](Perspective o) {
@@ -796,15 +724,20 @@ void dai::impl::getTransformImpl(const ManipOp& op,
                        }
 
                        imageCorners = {{{0, 0}, {(float)outputWidth, 0}, {(float)outputWidth, (float)outputHeight}, {0, (float)outputHeight}}};
-                       auto transformInv = getInverse(transform);
+                       auto transformInv = matrix::getMatrixInverse(transform);
                        srcCorners.push_back({matvecmul(transformInv, imageCorners[0]),
                                              matvecmul(transformInv, imageCorners[1]),
                                              matvecmul(transformInv, imageCorners[2]),
                                              matvecmul(transformInv, imageCorners[3])});
                    }},
         op.op);
-    imageCorners = getOuterRotatedRect(
-        {matvecmul(mat, imageCorners[0]), matvecmul(mat, imageCorners[1]), matvecmul(mat, imageCorners[2]), matvecmul(mat, imageCorners[3])});
+    auto outerRectPoints =
+        getOuterRotatedRect(
+            {matvecmul(mat, imageCorners[0]), matvecmul(mat, imageCorners[1]), matvecmul(mat, imageCorners[2]), matvecmul(mat, imageCorners[3])})
+            .getPoints();
+    for(auto i = 0; i < 4; ++i) {
+        imageCorners[i] = {outerRectPoints[i].x, outerRectPoints[i].y};
+    }
     transform = matmul(mat, transform);
 }
 
@@ -913,16 +846,6 @@ size_t dai::impl::getAlignedOutputFrameSize(ImgFrame::Type type, size_t width, s
             break;
     }
     return 0;
-}
-dai::RotatedRect dai::impl::getRotatedRectFromPoints(const std::vector<std::array<float, 2>>& points) {
-    auto rrCorners = impl::getOuterRotatedRect(points);
-    dai::RotatedRect rect;
-    rect.size.width = std::sqrt(std::pow(rrCorners[1][0] - rrCorners[0][0], 2) + std::pow(rrCorners[1][1] - rrCorners[0][1], 2));
-    rect.size.height = std::sqrt(std::pow(rrCorners[2][0] - rrCorners[1][0], 2) + std::pow(rrCorners[2][1] - rrCorners[1][1], 2));
-    rect.center.x = (rrCorners[0][0] + rrCorners[1][0] + rrCorners[2][0] + rrCorners[3][0]) / 4.0f;
-    rect.center.y = (rrCorners[0][1] + rrCorners[1][1] + rrCorners[2][1] + rrCorners[3][1]) / 4.0f;
-    rect.angle = std::atan2(rrCorners[1][1] - rrCorners[0][1], rrCorners[1][0] - rrCorners[0][0]) * 180.0f / (float)M_PI;
-    return rect;
 }
 
 #ifdef DEPTHAI_HAVE_OPENCV_SUPPORT

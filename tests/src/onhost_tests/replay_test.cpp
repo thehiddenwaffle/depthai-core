@@ -14,6 +14,11 @@
 
 constexpr unsigned int NUM_MSGS = 100;
 
+// Disable container overflow detection for this test binary (false positive from protobuf)
+extern "C" const char* __asan_default_options() {
+    return "detect_container_overflow=0";
+}
+
 class TestHelper {
    public:
     TestHelper() {
@@ -21,13 +26,13 @@ class TestHelper {
         std::filesystem::create_directories(testFolder);
         std::filesystem::create_directories(std::filesystem::path(testFolder).append("extracted"));
 
-        auto recordingFilenames = dai::utility::filenamesInTar(RECORDING_PATH);
+        auto recordingFilenames = dai::utility::filenamesInArchive(RECORDING_PATH);
         std::vector<std::filesystem::path> recordingExtFiles;
         recordingExtFiles.reserve(recordingFilenames.size());
         for(const auto& filename : recordingFilenames) {
             recordingExtFiles.push_back(std::filesystem::path(testFolder).append("extracted").append(filename));
         }
-        dai::utility::untarFiles(RECORDING_PATH, recordingFilenames, recordingExtFiles);
+        dai::utility::extractFiles(RECORDING_PATH, recordingFilenames, recordingExtFiles);
     }
 
     ~TestHelper() {

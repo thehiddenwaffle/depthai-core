@@ -1,18 +1,29 @@
 #include <atomic>
+#include <csignal>
 #include <iostream>
 #include <memory>
 #include <opencv2/opencv.hpp>
 
 #include "depthai/depthai.hpp"
 
+std::atomic<bool> quitEvent(false);
+
+void signalHandler(int) {
+    quitEvent = true;
+}
+
 // Custom host node for display
 class HostDisplay : public dai::node::CustomNode<HostDisplay> {
    public:
     HostDisplay() {
-        sendProcessingToPipeline(false);
+        sendProcessingToPipeline(true);
     }
 
     std::shared_ptr<dai::Buffer> processGroup(std::shared_ptr<dai::MessageGroup> message) override {
+        if(quitEvent) {
+            stopPipeline();
+            return nullptr;
+        }
         if(message == nullptr) return nullptr;
 
         auto frame = message->get<dai::ImgFrame>("frame");
@@ -30,6 +41,9 @@ class HostDisplay : public dai::node::CustomNode<HostDisplay> {
 };
 
 int main() {
+    signal(SIGTERM, signalHandler);
+    signal(SIGINT, signalHandler);
+
     // Create device
     std::shared_ptr<dai::Device> device = std::make_shared<dai::Device>();
 
@@ -45,11 +59,7 @@ int main() {
     output->link(display->inputs["frame"]);
 
     // Start pipeline
-    pipeline.start();
-    std::cout << "Display window opened. Press 'q' to quit." << std::endl;
-
-    // Wait for pipeline to finish
-    pipeline.wait();
+    pipeline.run();
 
     return 0;
 }

@@ -127,8 +127,24 @@ float ImgFrame::getLensPositionRaw() const {
     return cam.lensPositionRaw;
 }
 
+ImgFrame::Fsync ImgFrame::getFsync() const {
+    return cam.fsync;
+}
+
+int ImgFrame::getSensorMode() const {
+    return cam.sensorMode;
+}
+
+float ImgFrame::getFps() const {
+    return cam.fps;
+}
+
 unsigned int ImgFrame::getSourceHeight() const {
     return sourceFb.height;
+}
+
+ImgTransformation& ImgFrame::getTransformation() {
+    return transformation;
 }
 
 ImgFrame& ImgFrame::setInstanceNum(unsigned int instanceNum) {
@@ -177,6 +193,11 @@ ImgFrame& ImgFrame::setSourceSize(std::tuple<unsigned int, unsigned int> size) {
 ImgFrame& ImgFrame::setType(Type type) {
     fb.type = type;
     fb.bytesPP = ImgFrame::typeToBpp(fb.type);
+    return *this;
+}
+
+ImgFrame& ImgFrame::setTransformation(const ImgTransformation& transformation) {
+    this->transformation = transformation;
     return *this;
 }
 

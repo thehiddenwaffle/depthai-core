@@ -3,6 +3,7 @@
 
 // standard
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
@@ -12,14 +13,20 @@
 #include "AssetManager.hpp"
 #include "DeviceNode.hpp"
 #include "Node.hpp"
+#include "PipelineStateApi.hpp"
 #include "depthai/device/CalibrationHandler.hpp"
 #include "depthai/device/Device.hpp"
 #include "depthai/openvino/OpenVINO.hpp"
+#include "depthai/pipeline/datatype/PipelineEventAggregationConfig.hpp"
 #include "depthai/utility/AtomicBool.hpp"
 
 // shared
+#include "depthai/common/CameraBoardSocket.hpp"
 #include "depthai/device/BoardConfig.hpp"
+#include "depthai/pipeline/InputQueue.hpp"
 #include "depthai/pipeline/PipelineSchema.hpp"
+#include "depthai/pipeline/datatype/PipelineState.hpp"
+#include "depthai/pipeline/node/Camera.hpp"
 #include "depthai/properties/GlobalProperties.hpp"
 #include "depthai/utility/RecordReplay.hpp"
 
@@ -27,23 +34,55 @@ namespace dai {
 
 namespace fs = std::filesystem;
 
+enum class PipelineAutoCalibrationMode : int {
+    OFF = 0,
+    ON_START = 1,
+    CONTINUOUS = 2,
+};
+
 class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
     friend class Pipeline;
     friend class Node;
     friend class DeviceBase;
+    friend class utility::PipelineImplHelper;
 
    public:
-    PipelineImpl(Pipeline& pipeline, bool createImplicitDevice = true) : assetManager("/pipeline/"), parent(pipeline) {
+    PipelineImpl(bool createImplicitDevice = true) : assetManager("/pipeline/") {
         if(createImplicitDevice) {
             defaultDevice = std::make_shared<Device>();
+        } else {
+            hostProperties = DeviceProperties();
+            defaultDeviceProperties = &hostProperties.value();
         }
     }
-    PipelineImpl(Pipeline& pipeline, std::shared_ptr<Device> device) : assetManager("/pipeline/"), parent(pipeline), defaultDevice{std::move(device)} {}
+    PipelineImpl(std::shared_ptr<Device> device) : assetManager("/pipeline/"), defaultDevice{std::move(device)} {}
     PipelineImpl(const PipelineImpl&) = delete;
     PipelineImpl& operator=(const PipelineImpl&) = delete;
     PipelineImpl(PipelineImpl&&) = delete;
     PipelineImpl& operator=(PipelineImpl&&) = delete;
     ~PipelineImpl();
+
+   protected:
+    // Record and Replay
+    RecordConfig recordConfig;
+    bool enableHolisticRecordReplay = false;
+    std::unordered_map<std::string, std::filesystem::path> recordReplayFilenames;
+    bool removeRecordReplayFiles = true;
+    std::string defaultDeviceId;
+    // Is the pipeline building on host? Some steps should be skipped when building on device
+    bool buildingOnHost = true;
+
+    // Pipeline events
+    bool enablePipelineDebugging = false;
+    std::shared_ptr<MessageQueue> pipelineStateOut;
+    std::shared_ptr<InputQueue> pipelineStateRequest;
+    std::shared_ptr<MessageQueue> pipelineStateTraceOut;
+    std::shared_ptr<InputQueue> pipelineStateTraceRequest;
+
+    // Access to nodes
+    std::vector<std::shared_ptr<Node>> getAllNodes() const;
+    std::shared_ptr<Node> getNode(Node::Id id) const;
+    std::vector<std::shared_ptr<Node>> getSourceNodes();
 
    private:
     // static functions
@@ -52,21 +91,26 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
 
     // Functions
     Node::Id getNextUniqueId();
-    PipelineSchema getPipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE) const;
+    PipelineSchema getPipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE, bool includePipelineDebugging = true) const;
+    PipelineSchema getDevicePipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE, bool includePipelineDebugging = true) const;
     Device::Config getDeviceConfig() const;
     void setCameraTuningBlobPath(const fs::path& path);
+    void setCameraTuningBlobPath(CameraBoardSocket socket, const fs::path& path);
     void setXLinkChunkSize(int sizeBytes);
     GlobalProperties getGlobalProperties() const;
     void setGlobalProperties(GlobalProperties globalProperties);
+    void setDefaultDeviceProperties(const DeviceProperties& deviceProperties);
+    void setDefaultDevicePropertiesRef(DeviceProperties* deviceProperties);
+    std::optional<DeviceProperties> getDefaultDeviceProperties() const;
     void setSippBufferSize(int sizeBytes);
     void setSippDmaBufferSize(int sizeBytes);
     void setBoardConfig(BoardConfig board);
-    BoardConfig getBoardConfig() const;
+    void setAutoCalibrationMode(PipelineAutoCalibrationMode mode);
+    std::pair<std::shared_ptr<dai::node::Camera>, std::shared_ptr<dai::node::Camera>> getStereoPair() const;
+    bool hasDynamicCalibration() const;
+    PipelineAutoCalibrationMode getAutoCalibrationMode() const;
 
-    // Access to nodes
-    std::vector<std::shared_ptr<Node>> getAllNodes() const;
-    std::shared_ptr<Node> getNode(Node::Id id) const;
-    std::vector<std::shared_ptr<Node>> getSourceNodes();
+    BoardConfig getBoardConfig() const;
 
     void serialize(PipelineSchema& schema, Assets& assets, std::vector<std::uint8_t>& assetStorage, SerializationType type = DEFAULT_SERIALIZATION_TYPE) const;
     nlohmann::json serializeToJson(bool includeAssets) const;
@@ -85,6 +129,9 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
     bool isHostOnly() const;
     bool isDeviceOnly() const;
 
+    // Pipeline state getters
+    PipelineStateApi getPipelineState();
+
     // Must be incremented and unique for each node
     Node::Id latestId = 0;
     // Pipeline asset manager
@@ -97,6 +144,7 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
     // using NodeMap = std::unordered_map<Node::Id, std::shared_ptr<Node>>;
     // NodeMap nodeMap;
     std::vector<std::shared_ptr<Node>> nodes;
+    std::vector<std::pair<int64_t, int64_t>> xlinkBridges;
 
     // TODO(themarpe) - refactor, connections are now carried by nodes instead
     using NodeConnectionMap = std::unordered_map<Node::Id, std::unordered_set<Node::ConnectionInternal, Node::ConnectionInternal::Hash>>;
@@ -108,18 +156,12 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
     // Board configuration
     BoardConfig board;
 
-    // Record and Replay
-    RecordConfig recordConfig;
-    bool enableHolisticRecordReplay = false;
-    std::unordered_map<std::string, std::filesystem::path> recordReplayFilenames;
-    bool removeRecordReplayFiles = true;
-    std::string defaultDeviceId;
+    // Build-time automatic calibration policy for implicit AutoCalibration node creation.
+    PipelineAutoCalibrationMode autoCalibrationMode = PipelineAutoCalibrationMode::ON_START;
+    bool autoCalibrationModeSetByApi = false;
 
     // Output queues
     std::vector<std::shared_ptr<MessageQueue>> outputQueues;
-
-    // parent
-    Pipeline& parent;
 
     // is pipeline running
     AtomicBool running{false};
@@ -135,6 +177,8 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
 
     // DeviceBase for hybrid pipelines
     std::shared_ptr<Device> defaultDevice;
+    std::optional<DeviceProperties> hostProperties;
+    DeviceProperties* defaultDeviceProperties = nullptr;
 
     // Queue for tasks
     LockingQueue<std::function<void()>> tasks;
@@ -244,6 +288,8 @@ class Pipeline {
     std::shared_ptr<PipelineImpl> pimpl;
 
    public:
+    using AutoCalibrationMode = PipelineAutoCalibrationMode;
+
     PipelineImpl* impl() {
         return pimpl.get();
     }
@@ -286,9 +332,35 @@ class Pipeline {
     }
 
     /**
+     * Sets default device properties
+     */
+    void setDefaultDeviceProperties(DeviceProperties deviceProperties) {
+        impl()->setDefaultDeviceProperties(deviceProperties);
+    }
+
+    /**
+     * Sets default device properties reference. The properties should live at least as long as the pipeline.
+     */
+    void setDefaultDevicePropertiesRef(DeviceProperties* deviceProperties) {
+        impl()->setDefaultDevicePropertiesRef(deviceProperties);
+    }
+
+    /**
+     * Gets a copy of default device properties. If pipeline is in host only mode, returns host properties, otherwise returns device properties
+     */
+    std::optional<DeviceProperties> getDefaultDeviceProperties() const {
+        return impl()->getDefaultDeviceProperties();
+    }
+
+    /**
      * @returns Pipeline schema
      */
-    PipelineSchema getPipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE) const;
+    PipelineSchema getPipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE, bool includePipelineDebugging = true) const;
+
+    /**
+     * @returns Device pipeline schema (without host only nodes and connections)
+     */
+    PipelineSchema getDevicePipelineSchema(SerializationType type = DEFAULT_SERIALIZATION_TYPE, bool includePipelineDebugging = true) const;
 
     // void loadAssets(AssetManager& assetManager);
     void serialize(PipelineSchema& schema, Assets& assets, std::vector<std::uint8_t>& assetStorage) const {
@@ -380,9 +452,9 @@ class Pipeline {
     }
 
     /**
-     * check if calib data has been set or the default will be returned
-     * @return true - calib data has been set
-     * @return false - calib data has not been set - default will be returned
+     * check if calib data is available on the device
+     * @return true - calib data is available
+     * @return false - calib data is not available
      */
     bool isCalibrationDataAvailable() const {
         return impl()->isCalibrationDataAvailable();
@@ -418,6 +490,11 @@ class Pipeline {
     /// Set a camera IQ (Image Quality) tuning blob, used for all cameras
     void setCameraTuningBlobPath(const fs::path& path) {
         impl()->setCameraTuningBlobPath(path);
+    }
+
+    /// Set a camera IQ (Image Quality) tuning blob, used for specific board socket
+    void setCameraTuningBlobPath(CameraBoardSocket socket, const fs::path& path) {
+        impl()->setCameraTuningBlobPath(socket, path);
     }
 
     /**
@@ -456,6 +533,26 @@ class Pipeline {
         impl()->setBoardConfig(board);
     }
 
+    /// Sets implicit automatic calibration policy for this pipeline.
+    void setAutoCalibration(AutoCalibrationMode mode) {
+        impl()->setAutoCalibrationMode(mode);
+    }
+
+    /// Gets implicit automatic calibration policy for this pipeline.
+    AutoCalibrationMode getAutoCalibration() const {
+        return impl()->getAutoCalibrationMode();
+    }
+
+    /// Sets implicit automatic calibration policy for this pipeline.
+    void setAutoCalibrationMode(AutoCalibrationMode mode) {
+        impl()->setAutoCalibrationMode(mode);
+    }
+
+    /// Gets implicit automatic calibration policy for this pipeline.
+    AutoCalibrationMode getAutoCalibrationMode() const {
+        return impl()->getAutoCalibrationMode();
+    }
+
     /// Gets board configuration
     BoardConfig getBoardConfig() const {
         return impl()->getBoardConfig();
@@ -475,6 +572,10 @@ class Pipeline {
     }
 
     void build() {
+        impl()->build();
+    }
+    void buildDevice() {
+        impl()->buildingOnHost = false;
         impl()->build();
     }
     void start() {
@@ -506,6 +607,19 @@ class Pipeline {
     /// Record and Replay
     void enableHolisticRecord(const RecordConfig& config);
     void enableHolisticReplay(const std::string& pathToRecording);
+    bool isHolisticRecordEnabled() const;
+    bool isHolisticReplayEnabled() const;
+
+    /// Pipeline debugging
+    void enablePipelineDebugging(bool enable = true);
+    bool isPipelineDebuggingEnabled() const;
+
+    // Access to pipeline state queues
+    std::shared_ptr<MessageQueue> getPipelineStateOut() const;
+    std::shared_ptr<InputQueue> getPipelineStateRequest() const;
+
+    // Pipeline state getters
+    PipelineStateApi getPipelineState();
 };
 
 }  // namespace dai

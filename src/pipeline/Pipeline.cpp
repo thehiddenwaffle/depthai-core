@@ -3,32 +3,37 @@
 #include <cstring>
 
 #include "depthai/device/CalibrationHandler.hpp"
-#include "depthai/pipeline/ThreadedHostNode.hpp"
+#ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
+    #include "depthai/pipeline/node/AutoCalibration.hpp"
+#endif
 #include "depthai/pipeline/node/internal/XLinkIn.hpp"
 #include "depthai/pipeline/node/internal/XLinkInHost.hpp"
 #include "depthai/pipeline/node/internal/XLinkOut.hpp"
 #include "depthai/pipeline/node/internal/XLinkOutHost.hpp"
-#include "depthai/utility/Initialization.hpp"
-#include "pipeline/datatype/ImgFrame.hpp"
-#include "pipeline/node/DetectionNetwork.hpp"
+#include "properties/GlobalProperties.hpp"
 #include "utility/Compression.hpp"
 #include "utility/Environment.hpp"
 #include "utility/ErrorMacros.hpp"
 #include "utility/HolisticRecordReplay.hpp"
 #include "utility/Logging.hpp"
+#include "utility/PipelineImplHelper.hpp"
 #include "utility/Platform.hpp"
 #include "utility/RecordReplayImpl.hpp"
-#include "utility/spdlog-fmt.hpp"
+#include "utility/Serialization.hpp"
 
 // shared
 #include "depthai/pipeline/NodeConnectionSchema.hpp"
 
 // std
+#include <algorithm>
 #include <cassert>
-#include <fstream>
+#include <cctype>
+#include <cmath>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_set>
 
 // libraries
@@ -56,20 +61,88 @@ struct hash<::dai::NodeConnectionSchema> {
 
 namespace dai {
 
+namespace {
+
+const char* autoCalibrationModeToString(PipelineAutoCalibrationMode mode) {
+    switch(mode) {
+        case PipelineAutoCalibrationMode::OFF:
+            return "OFF";
+        case PipelineAutoCalibrationMode::ON_START:
+            return "ON_START";
+        case PipelineAutoCalibrationMode::CONTINUOUS:
+            return "CONTINUOUS";
+    }
+    return "ON_START";
+}
+
+std::optional<PipelineAutoCalibrationMode> parseAutoCalibrationMode(std::string_view mode) {
+    std::string modeStr(mode);
+    std::transform(modeStr.begin(), modeStr.end(), modeStr.begin(), [](char c) { return static_cast<char>(std::toupper(static_cast<unsigned char>(c))); });
+    if(modeStr == "OFF") {
+        return PipelineAutoCalibrationMode::OFF;
+    }
+    if(modeStr == "ON_START") {
+        return PipelineAutoCalibrationMode::ON_START;
+    }
+    if(modeStr == "CONTINUOUS") {
+        return PipelineAutoCalibrationMode::CONTINUOUS;
+    }
+    return std::nullopt;
+}
+
+#ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
+bool hasDifferentDistortion(const CalibrationHandler& lhs, const CalibrationHandler& rhs, CameraBoardSocket socket) {
+    if(!lhs.hasCameraCalibration(socket) || !rhs.hasCameraCalibration(socket)) {
+        if(!lhs.hasCameraCalibration(socket) && !rhs.hasCameraCalibration(socket)) {
+            return false;
+        }
+        return true;
+    }
+
+    if(lhs.getDistortionModel(socket) != rhs.getDistortionModel(socket)) {
+        return true;
+    }
+
+    const auto lhsDist = lhs.getDistortionCoefficients(socket);
+    const auto rhsDist = rhs.getDistortionCoefficients(socket);
+
+    if(lhsDist.size() != rhsDist.size()) {
+        return true;
+    }
+
+    constexpr float EPS = 1e-6f;
+    for(size_t i = 0; i < lhsDist.size(); ++i) {
+        if(std::fabs(lhsDist[i] - rhsDist[i]) > EPS) {
+            return true;
+        }
+    }
+
+    return false;
+}
+#endif
+
+}  // namespace
+
 namespace fs = std::filesystem;
+
+std::mutex pipelineBuildMutex;
 
 Node::Id PipelineImpl::getNextUniqueId() {
     return latestId++;
 }
 
-Pipeline::Pipeline(bool createImplicitDevice) : pimpl(std::make_shared<PipelineImpl>(*this, createImplicitDevice)) {}
+Pipeline::Pipeline(bool createImplicitDevice) : pimpl(std::make_shared<PipelineImpl>(createImplicitDevice)) {}
 
-Pipeline::Pipeline(std::shared_ptr<Device> device) : pimpl(std::make_shared<PipelineImpl>(*this, device)) {}
+Pipeline::Pipeline(std::shared_ptr<Device> device) : pimpl(std::make_shared<PipelineImpl>(device)) {}
 
 Pipeline::Pipeline(std::shared_ptr<PipelineImpl> pimpl) : pimpl(std::move(pimpl)) {}
 
-PipelineSchema Pipeline::getPipelineSchema(SerializationType type) const {
-    return pimpl->getPipelineSchema(type);
+PipelineSchema Pipeline::getPipelineSchema(SerializationType type, bool includePipelineDebugging) const {
+    return pimpl->getPipelineSchema(type, includePipelineDebugging);
+}
+
+PipelineSchema Pipeline::getDevicePipelineSchema(SerializationType type, bool includePipelineDebugging) const {
+    return pimpl->getDevicePipelineSchema(type, includePipelineDebugging);
 }
 
 GlobalProperties PipelineImpl::getGlobalProperties() const {
@@ -78,6 +151,30 @@ GlobalProperties PipelineImpl::getGlobalProperties() const {
 
 void PipelineImpl::setGlobalProperties(GlobalProperties globalProperties) {
     this->globalProperties = globalProperties;
+}
+
+void PipelineImpl::setDefaultDeviceProperties(const DeviceProperties& deviceProperties) {
+    if(defaultDevice) {
+        defaultDevice->setProperties(deviceProperties);
+    } else if(defaultDeviceProperties != nullptr) {
+        defaultDeviceProperties->setFrom(deviceProperties);
+    }
+}
+
+void PipelineImpl::setDefaultDevicePropertiesRef(DeviceProperties* deviceProperties) {
+    if(deviceProperties == nullptr) {
+        throw std::runtime_error("deviceProperties pointer cannot be null.");
+    }
+    defaultDeviceProperties = deviceProperties;
+}
+
+std::optional<DeviceProperties> PipelineImpl::getDefaultDeviceProperties() const {
+    if(defaultDevice) {
+        return defaultDevice->getProperties();
+    } else if(defaultDeviceProperties != nullptr) {
+        return *defaultDeviceProperties;
+    }
+    return std::nullopt;
 }
 
 std::shared_ptr<Node> PipelineImpl::getNode(Node::Id id) const {
@@ -115,7 +212,7 @@ std::vector<std::shared_ptr<Node>> PipelineImpl::getSourceNodes() {
 
 void PipelineImpl::serialize(PipelineSchema& schema, Assets& assets, std::vector<std::uint8_t>& assetStorage, SerializationType type) const {
     // Set schema
-    schema = getPipelineSchema(type);
+    schema = getDevicePipelineSchema(type);
 
     // Serialize all asset managers into asset storage
     assetStorage.clear();
@@ -183,104 +280,134 @@ std::vector<Node::Connection> PipelineImpl::getConnections() const {
     return conns;
 }
 
-PipelineSchema PipelineImpl::getPipelineSchema(SerializationType type) const {
+PipelineSchema PipelineImpl::getPipelineSchema(SerializationType type, bool includePipelineDebugging) const {
     PipelineSchema schema;
     schema.globalProperties = globalProperties;
+    schema.bridges = xlinkBridges;
     int latestIoId = 0;
+
+    std::vector<Node::Id> pipelineDebuggingNodeIds;
+    if(!includePipelineDebugging) {
+        for(const auto& node : getAllNodes()) {
+            if(std::string(node->getName()) == std::string("PipelineEventAggregation") || std::string(node->getName()) == std::string("PipelineStateMerge")) {
+                pipelineDebuggingNodeIds.push_back(node->id);
+            }
+        }
+        for(const auto& conn : getConnectionsInternal()) {
+            auto outNode = conn.outputNode.lock();
+            auto inNode = conn.inputNode.lock();
+            if(conn.outputName == "pipelineEventOutput") continue;
+            if(std::string(outNode->getName()).find("XLink") != std::string::npos || std::string(inNode->getName()).find("XLink") != std::string::npos
+               || std::string(outNode->getName()).find("InputQueue") != std::string::npos
+               || std::string(inNode->getName()).find("OutputQueue") != std::string::npos) {
+                if(std::find(pipelineDebuggingNodeIds.begin(), pipelineDebuggingNodeIds.end(), inNode->id) != pipelineDebuggingNodeIds.end()) {
+                    pipelineDebuggingNodeIds.push_back(outNode->id);
+                }
+                if(std::find(pipelineDebuggingNodeIds.begin(), pipelineDebuggingNodeIds.end(), outNode->id) != pipelineDebuggingNodeIds.end()) {
+                    pipelineDebuggingNodeIds.push_back(inNode->id);
+                }
+            }
+        }
+    }
+
     // Loop over all nodes, and add them to schema
     for(const auto& node : getAllNodes()) {
-        // const auto& node = kv.second;
-        if(std::string(node->getName()) == std::string("NodeGroup") || std::string(node->getName()) == std::string("DeviceNodeGroup")) {
+        if(!includePipelineDebugging
+           && std::find(pipelineDebuggingNodeIds.begin(), pipelineDebuggingNodeIds.end(), node->id) != pipelineDebuggingNodeIds.end()) {
             continue;
         }
-        // Check if its a host node or device node
-        if(node->runOnHost()) {
-            // host node, no need to serialize to a schema
-            // TBD any additional changes
-        } else {
-            // Create 'node' info
-            NodeObjInfo info;
-            info.id = node->id;
-            info.name = node->getName();
-            info.alias = node->getAlias();
-            info.parentId = node->parentId;
-            const auto& deviceNode = std::dynamic_pointer_cast<DeviceNode>(node);
-            if(!deviceNode) {
-                throw std::invalid_argument(fmt::format("Node '{}' should subclass DeviceNode or have hostNode == true", info.name));
-            }
-            deviceNode->getProperties().serialize(info.properties, type);
-            info.logLevel = deviceNode->getLogLevel();
-            // Create Io information
-            auto inputs = node->getInputs();
-            auto outputs = node->getOutputs();
+        // Create 'node' info
+        NodeObjInfo info;
+        info.id = node->id;
+        info.name = node->getName();
+        info.alias = node->getAlias();
+        info.parentId = node->parentId;
+        info.deviceNode = !node->runOnHost();
+        if(!node->runOnHost()) info.deviceId = defaultDeviceId;
 
-            info.ioInfo.reserve(inputs.size() + outputs.size());
-
-            // Add inputs
-            for(const auto& input : inputs) {
-                NodeIoInfo io;
-                io.id = latestIoId;
-                latestIoId++;
-                io.blocking = input.getBlocking();
-                io.queueSize = input.getMaxSize();
-                io.name = input.getName();
-                io.group = input.getGroup();
-                auto ioKey = std::make_tuple(io.group, io.name);
-
-                io.waitForMessage = input.getWaitForMessage();
-                switch(input.getType()) {
-                    case Node::Input::Type::MReceiver:
-                        io.type = NodeIoInfo::Type::MReceiver;
-                        break;
-                    case Node::Input::Type::SReceiver:
-                        io.type = NodeIoInfo::Type::SReceiver;
-                        break;
-                }
-
-                if(info.ioInfo.count(ioKey) > 0) {
-                    if(io.group == "") {
-                        throw std::invalid_argument(fmt::format("'{}.{}' redefined. Inputs and outputs must have unique names", info.name, io.name));
-                    } else {
-                        throw std::invalid_argument(
-                            fmt::format("'{}.{}[\"{}\"]' redefined. Inputs and outputs must have unique names", info.name, io.group, io.name));
-                    }
-                }
-                info.ioInfo[ioKey] = io;
-            }
-
-            // Add outputs
-            for(const auto& output : outputs) {
-                NodeIoInfo io;
-                io.id = latestIoId;
-                latestIoId++;
-                io.blocking = false;
-                io.name = output.getName();
-                io.group = output.getGroup();
-                auto ioKey = std::make_tuple(io.group, io.name);
-
-                switch(output.getType()) {
-                    case Node::Output::Type::MSender:
-                        io.type = NodeIoInfo::Type::MSender;
-                        break;
-                    case Node::Output::Type::SSender:
-                        io.type = NodeIoInfo::Type::SSender;
-                        break;
-                }
-
-                if(info.ioInfo.count(ioKey) > 0) {
-                    if(io.group == "") {
-                        throw std::invalid_argument(fmt::format("'{}.{}' redefined. Inputs and outputs must have unique names", info.name, io.name));
-                    } else {
-                        throw std::invalid_argument(
-                            fmt::format("'{}.{}[\"{}\"]' redefined. Inputs and outputs must have unique names", info.name, io.group, io.name));
-                    }
-                }
-                info.ioInfo[ioKey] = io;
-            }
-
-            // At the end, add the constructed node information to the schema
-            schema.nodes[info.id] = info;
+        const auto& deviceNode = std::dynamic_pointer_cast<DeviceNode>(node);
+        if(!node->runOnHost() && !deviceNode) {
+            throw std::invalid_argument(fmt::format("Node '{}' should subclass DeviceNode or have hostNode == true", info.name));
         }
+        if(deviceNode) {
+            deviceNode->getProperties().serialize(info.properties, type);
+            if(std::string(deviceNode->getName()) == "DeviceNodeGroup") {
+                info.logLevel = LogLevel::OFF;
+            } else {
+                info.logLevel = deviceNode->getLogLevel();
+            }
+        }
+        // Create Io information
+        auto inputs = node->getInputs();
+        auto outputs = node->getOutputs();
+
+        info.ioInfo.reserve(inputs.size() + outputs.size());
+
+        // Add inputs
+        for(const auto& input : inputs) {
+            NodeIoInfo io;
+            io.id = latestIoId;
+            latestIoId++;
+            io.blocking = input.getBlocking();
+            io.queueSize = input.getMaxSize();
+            io.name = input.getName();
+            io.group = input.getGroup();
+            auto ioKey = std::make_tuple(io.group, io.name);
+
+            io.waitForMessage = input.getWaitForMessage();
+            switch(input.getType()) {
+                case Node::Input::Type::MReceiver:
+                    io.type = NodeIoInfo::Type::MReceiver;
+                    break;
+                case Node::Input::Type::SReceiver:
+                    io.type = NodeIoInfo::Type::SReceiver;
+                    break;
+            }
+
+            if(info.ioInfo.count(ioKey) > 0) {
+                if(io.group == "") {
+                    throw std::invalid_argument(fmt::format("'{}.{}' redefined. Inputs and outputs must have unique names", info.name, io.name));
+                } else {
+                    throw std::invalid_argument(
+                        fmt::format("'{}.{}[\"{}\"]' redefined. Inputs and outputs must have unique names", info.name, io.group, io.name));
+                }
+            }
+            info.ioInfo[ioKey] = io;
+        }
+
+        // Add outputs
+        for(const auto& output : outputs) {
+            if(!includePipelineDebugging && output.getName() == "pipelineEventOutput") continue;
+            NodeIoInfo io;
+            io.id = latestIoId;
+            latestIoId++;
+            io.blocking = false;
+            io.name = output.getName();
+            io.group = output.getGroup();
+            auto ioKey = std::make_tuple(io.group, io.name);
+
+            switch(output.getType()) {
+                case Node::Output::Type::MSender:
+                    io.type = NodeIoInfo::Type::MSender;
+                    break;
+                case Node::Output::Type::SSender:
+                    io.type = NodeIoInfo::Type::SSender;
+                    break;
+            }
+
+            if(info.ioInfo.count(ioKey) > 0) {
+                if(io.group == "") {
+                    throw std::invalid_argument(fmt::format("'{}.{}' redefined. Inputs and outputs must have unique names", info.name, io.name));
+                } else {
+                    throw std::invalid_argument(
+                        fmt::format("'{}.{}[\"{}\"]' redefined. Inputs and outputs must have unique names", info.name, io.group, io.name));
+                }
+            }
+            info.ioInfo[ioKey] = io;
+        }
+
+        // At the end, add the constructed node information to the schema
+        schema.nodes[info.id] = info;
     }
 
     // Create 'connections' info
@@ -299,6 +426,7 @@ PipelineSchema PipelineImpl::getPipelineSchema(SerializationType type) const {
     // Node::Id xLinkBridgeId = latestId;
 
     for(const auto& conn : getConnectionsInternal()) {
+        if(!includePipelineDebugging && conn.outputName == "pipelineEventOutput") continue;
         NodeConnectionSchema c;
         auto outNode = conn.outputNode.lock();
         auto inNode = conn.inputNode.lock();
@@ -309,13 +437,14 @@ PipelineSchema PipelineImpl::getPipelineSchema(SerializationType type) const {
         c.node2Input = conn.inputName;
         c.node2InputGroup = conn.inputGroup;
 
-        bool outputHost = outNode->runOnHost();
-        bool inputHost = inNode->runOnHost();
-
-        if(outputHost && inputHost) {
-            // skip - connection between host nodes doesn't have to be represented to the device
+        if(!includePipelineDebugging
+           && (std::find(pipelineDebuggingNodeIds.begin(), pipelineDebuggingNodeIds.end(), c.node1Id) != pipelineDebuggingNodeIds.end()
+               || std::find(pipelineDebuggingNodeIds.begin(), pipelineDebuggingNodeIds.end(), c.node2Id) != pipelineDebuggingNodeIds.end())) {
             continue;
         }
+
+        bool outputHost = outNode->runOnHost();
+        bool inputHost = inNode->runOnHost();
 
         if(outputHost && !inputHost) {
             throw std::invalid_argument(
@@ -334,6 +463,35 @@ PipelineSchema PipelineImpl::getPipelineSchema(SerializationType type) const {
     return schema;
 }
 
+PipelineSchema PipelineImpl::getDevicePipelineSchema(SerializationType type, bool includePipelineDebugging) const {
+    auto schema = getPipelineSchema(type, includePipelineDebugging);
+    // Remove bridge info
+    schema.bridges.clear();
+    // Remove host and group nodes
+    for(auto it = schema.nodes.begin(); it != schema.nodes.end();) {
+        if(!it->second.deviceNode || it->second.name == "NodeGroup" || it->second.name == "DeviceNodeGroup") {
+            it = schema.nodes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    // Remove connections between host nodes (host - device connections should not exist)
+    schema.connections.erase(std::remove_if(schema.connections.begin(),
+                                            schema.connections.end(),
+                                            [&schema](const NodeConnectionSchema& c) {
+                                                auto node1 = schema.nodes.find(c.node1Id);
+                                                auto node2 = schema.nodes.find(c.node2Id);
+                                                if(node1 == schema.nodes.end() && node2 == schema.nodes.end()) {
+                                                    return true;
+                                                } else if(node1 == schema.nodes.end() || node2 == schema.nodes.end()) {
+                                                    throw std::invalid_argument("Connection from host node to device node should not exist here");
+                                                }
+                                                return false;
+                                            }),
+                             schema.connections.end());
+    return schema;
+}
+
 Device::Config PipelineImpl::getDeviceConfig() const {
     Device::Config config;
     config.board = board;
@@ -345,24 +503,64 @@ void PipelineImpl::setCameraTuningBlobPath(const fs::path& path) {
 
     auto asset = assetManager.set(assetKey, path);
 
-    globalProperties.cameraTuningBlobUri = asset->getRelativeUri();
-    globalProperties.cameraTuningBlobSize = static_cast<uint32_t>(asset->data.size());
+    if(defaultDevice) {
+        defaultDevice->setCameraTuningBlob(asset->getRelativeUri(), static_cast<uint32_t>(asset->data.size()));
+    } else if(defaultDeviceProperties != nullptr) {
+        defaultDeviceProperties->cameraTuningBlobUri = asset->getRelativeUri();
+        defaultDeviceProperties->cameraTuningBlobSize = static_cast<uint32_t>(asset->data.size());
+    }
+}
+
+void PipelineImpl::setCameraTuningBlobPath(CameraBoardSocket socket, const fs::path& path) {
+    std::string assetKey = "camTuning";
+    assetKey += "_" + std::to_string(static_cast<int>(socket));
+
+    auto asset = assetManager.set(assetKey, path);
+
+    if(defaultDevice) {
+        defaultDevice->setCameraSocketTuningBlob(socket, asset->getRelativeUri(), static_cast<uint32_t>(asset->data.size()));
+    } else if(defaultDeviceProperties != nullptr) {
+        defaultDeviceProperties->cameraSocketTuningBlobUri[socket] = asset->getRelativeUri();
+        defaultDeviceProperties->cameraSocketTuningBlobSize[socket] = static_cast<uint32_t>(asset->data.size());
+    }
 }
 
 void PipelineImpl::setXLinkChunkSize(int sizeBytes) {
-    globalProperties.xlinkChunkSize = sizeBytes;
+    if(defaultDevice) {
+        defaultDevice->setXLinkChunkSize(sizeBytes);
+    } else if(defaultDeviceProperties != nullptr) {
+        defaultDeviceProperties->xlinkChunkSize = sizeBytes;
+    }
 }
 
 void PipelineImpl::setSippBufferSize(int sizeBytes) {
-    globalProperties.sippBufferSize = sizeBytes;
+    if(defaultDevice) {
+        defaultDevice->setSippBufferSize(sizeBytes);
+    } else if(defaultDeviceProperties != nullptr) {
+        defaultDeviceProperties->sippBufferSize = sizeBytes;
+    }
 }
 
 void PipelineImpl::setSippDmaBufferSize(int sizeBytes) {
-    globalProperties.sippDmaBufferSize = sizeBytes;
+    if(defaultDevice) {
+        defaultDevice->setSippDmaBufferSize(sizeBytes);
+    } else if(defaultDeviceProperties != nullptr) {
+        defaultDeviceProperties->sippDmaBufferSize = sizeBytes;
+    }
 }
 
 void PipelineImpl::setBoardConfig(BoardConfig boardCfg) {
     board = boardCfg;
+}
+
+void PipelineImpl::setAutoCalibrationMode(PipelineAutoCalibrationMode mode) {
+    DAI_CHECK_V(!isBuilt(), "Cannot change auto calibration mode once the pipeline is built.");
+    autoCalibrationMode = mode;
+    autoCalibrationModeSetByApi = true;
+}
+
+PipelineAutoCalibrationMode PipelineImpl::getAutoCalibrationMode() const {
+    return autoCalibrationMode;
 }
 
 BoardConfig PipelineImpl::getBoardConfig() const {
@@ -373,7 +571,7 @@ BoardConfig PipelineImpl::getBoardConfig() const {
 void PipelineImpl::remove(std::shared_ptr<Node> toRemove) {
     DAI_CHECK_V(!isBuilt(), "Cannot remove node from pipeline once it is built.");
     DAI_CHECK_V(toRemove->parent.lock() != nullptr, "Cannot remove a node that is not a part of any pipeline");
-    DAI_CHECK_V(toRemove->parent.lock() == parent.pimpl, "Cannot remove a node that is not a part of this pipeline");
+    DAI_CHECK_V(toRemove->parent.lock() == shared_from_this(), "Cannot remove a node that is not a part of this pipeline");
 
     // First remove the node from the pipeline directly
     auto it = std::remove(nodes.begin(), nodes.end(), toRemove);
@@ -429,30 +627,62 @@ void PipelineImpl::setCalibrationData(CalibrationHandler calibrationDataHandler)
 }
 
 bool PipelineImpl::isCalibrationDataAvailable() const {
-    return globalProperties.calibData.has_value();
+    if(defaultDevice) {
+        return defaultDevice->isCalibrationAvailable();
+    }
+    if(defaultDeviceProperties != nullptr) {
+        std::lock_guard<std::mutex> lock(calibMtx);
+        return defaultDeviceProperties->calibData.has_value();
+    }
+    return false;
 }
 
 CalibrationHandler PipelineImpl::getCalibrationData() const {
-    if(globalProperties.calibData) {
-        return CalibrationHandler(globalProperties.calibData.value());
-    } else {
-        return CalibrationHandler();
+    if(defaultDevice) {
+        return defaultDevice->getCalibration();
     }
+    if(defaultDeviceProperties != nullptr && defaultDeviceProperties->calibData.has_value()) {
+        std::lock_guard<std::mutex> lock(calibMtx);
+        if(defaultDeviceProperties->calibData.has_value()) {
+            return CalibrationHandler(defaultDeviceProperties->calibData.value());
+        }
+    }
+    throw std::runtime_error("No default device properties set in pipeline");
 }
 
 void PipelineImpl::setEepromData(std::optional<EepromData> eepromData) {
-    std::unique_lock<std::mutex> lock(calibMtx);
-    globalProperties.calibData = eepromData;
-    globalProperties.eepromId += 1;  // Increment eepromId to indicate that eeprom data has changed
+    if(defaultDevice) {
+        defaultDevice->setCalibration(eepromData);
+    } else if(defaultDeviceProperties != nullptr) {
+        std::lock_guard<std::mutex> lock(calibMtx);
+        defaultDeviceProperties->calibData = eepromData;
+        defaultDeviceProperties->eepromId += 1;  // Increment eepromId to indicate that eeprom data has changed
+    }
 }
 
 std::optional<EepromData> PipelineImpl::getEepromData() const {
-    return globalProperties.calibData;
+    if(defaultDevice) {
+        if(auto calibration = defaultDevice->tryGetCalibration()) {
+            return calibration->getEepromData();
+        }
+        return std::nullopt;
+    }
+    if(defaultDeviceProperties != nullptr) {
+        std::unique_lock<std::mutex> lock(calibMtx);
+        return defaultDeviceProperties->calibData;
+    }
+    return std::nullopt;
 }
 
 uint32_t PipelineImpl::getEepromId() const {
-    std::unique_lock<std::mutex> lock(calibMtx);
-    return globalProperties.eepromId;
+    if(defaultDevice) {
+        return defaultDevice->getProperties().eepromId;
+    }
+    if(defaultDeviceProperties != nullptr) {
+        std::unique_lock<std::mutex> lock(calibMtx);
+        return defaultDeviceProperties->eepromId;
+    }
+    return 0;
 }
 
 bool PipelineImpl::isHostOnly() const {
@@ -475,6 +705,20 @@ bool PipelineImpl::isDeviceOnly() const {
         }
     }
     return deviceOnly;
+}
+
+PipelineStateApi PipelineImpl::getPipelineState() {
+    bool hasPipelineMergeNode = false;
+    for(const auto& node : getAllNodes()) {
+        if(strcmp(node->getName(), "PipelineStateMerge") == 0) {
+            hasPipelineMergeNode = true;
+            break;
+        }
+    }
+    if(!hasPipelineMergeNode) {
+        throw std::runtime_error("Pipeline debugging disabled. Cannot get pipeline state.");
+    }
+    return PipelineStateApi(pipelineStateOut, pipelineStateRequest, getAllNodes());
 }
 
 void PipelineImpl::add(std::shared_ptr<Node> node) {
@@ -505,8 +749,8 @@ void PipelineImpl::add(std::shared_ptr<Node> node) {
         }
 
         if(curNode->parent.lock() == nullptr) {
-            curNode->parent = parent.pimpl;
-        } else if(curNode->parent.lock() != parent.pimpl) {
+            curNode->parent = shared_from_this();
+        } else if(curNode->parent.lock() != shared_from_this()) {
             throw std::invalid_argument("Cannot add a node that is already part of another pipeline");
         }
 
@@ -533,104 +777,164 @@ bool PipelineImpl::isBuilt() const {
     return isBuild;
 }
 
-void PipelineImpl::build() {
-    // TODO(themarpe) - add mutex and set running up ahead
-    if(isBuild) return;
-    isBuild = true;
-
-    if(defaultDevice) {
-        auto recordPath = std::filesystem::path(utility::getEnvAs<std::string>("DEPTHAI_RECORD", ""));
-        auto replayPath = std::filesystem::path(utility::getEnvAs<std::string>("DEPTHAI_REPLAY", ""));
-
-        if(defaultDevice->getDeviceInfo().platform == XLinkPlatform_t::X_LINK_MYRIAD_2
-           || defaultDevice->getDeviceInfo().platform == XLinkPlatform_t::X_LINK_MYRIAD_X
-           || defaultDevice->getDeviceInfo().platform == XLinkPlatform_t::X_LINK_RVC4) {
-            try {
-#ifdef DEPTHAI_MERGED_TARGET
-                if(enableHolisticRecordReplay) {
-                    switch(recordConfig.state) {
-                        case RecordConfig::RecordReplayState::RECORD:
-                            recordPath = recordConfig.outputDir;
-                            replayPath = "";
-                            break;
-                        case RecordConfig::RecordReplayState::REPLAY:
-                            recordPath = "";
-                            replayPath = recordConfig.outputDir;
-                            break;
-                        case RecordConfig::RecordReplayState::NONE:
-                            enableHolisticRecordReplay = false;
-                            break;
-                    }
-                }
-
-                defaultDeviceId = defaultDevice->getDeviceId();
-
-                if(!recordPath.empty() && !replayPath.empty()) {
-                    Logging::getInstance().logger.warn("Both DEPTHAI_RECORD and DEPTHAI_REPLAY are set. Record and replay disabled.");
-                } else if(!recordPath.empty()) {
-                    if(enableHolisticRecordReplay || utility::checkRecordConfig(recordPath, recordConfig)) {
-                        if(platform::checkWritePermissions(recordPath)) {
-                            if(utility::setupHolisticRecord(parent,
-                                                            defaultDeviceId,
-                                                            recordConfig,
-                                                            recordReplayFilenames,
-                                                            defaultDevice->getDeviceInfo().platform == XLinkPlatform_t::X_LINK_MYRIAD_2
-                                                                || defaultDevice->getDeviceInfo().platform == XLinkPlatform_t::X_LINK_MYRIAD_X)) {
-                                recordConfig.state = RecordConfig::RecordReplayState::RECORD;
-                                Logging::getInstance().logger.info("Record enabled.");
-                            } else {
-                                Logging::getInstance().logger.warn("Could not set up holistic record. Record and replay disabled.");
-                            }
-                        } else {
-                            Logging::getInstance().logger.warn("DEPTHAI_RECORD path does not have write permissions. Record disabled.");
-                        }
-                    } else {
-                        Logging::getInstance().logger.warn("Could not successfully parse DEPTHAI_RECORD. Record disabled.");
-                    }
-                } else if(!replayPath.empty()) {
-                    if(platform::checkPathExists(replayPath)) {
-                        if(platform::checkWritePermissions(replayPath)) {
-                            if(utility::setupHolisticReplay(parent,
-                                                            replayPath,
-                                                            defaultDeviceId,
-                                                            recordConfig,
-                                                            recordReplayFilenames,
-                                                            defaultDevice->getDeviceInfo().platform == XLinkPlatform_t::X_LINK_MYRIAD_2
-                                                                || defaultDevice->getDeviceInfo().platform == XLinkPlatform_t::X_LINK_MYRIAD_X)) {
-                                recordConfig.state = RecordConfig::RecordReplayState::REPLAY;
-                                if(platform::checkPathExists(replayPath, true)) {
-                                    removeRecordReplayFiles = false;
-                                }
-                                Logging::getInstance().logger.info("Replay enabled.");
-                            } else {
-                                Logging::getInstance().logger.warn("Could not set up holistic replay. Record and replay disabled.");
-                            }
-                        } else {
-                            Logging::getInstance().logger.warn("DEPTHAI_REPLAY path does not have write permissions. Replay disabled.");
-                        }
-                    } else {
-                        Logging::getInstance().logger.warn("DEPTHAI_REPLAY path does not exist or is invalid. Replay disabled.");
-                    }
-                }
-#else
-                recordConfig.state = RecordConfig::RecordReplayState::NONE;
-                if(!recordPath.empty() || !replayPath.empty()) {
-                    Logging::getInstance().logger.warn("Merged target is required to use holistic record/replay.");
-                }
-#endif
-            } catch(std::runtime_error& e) {
-                Logging::getInstance().logger.warn("Could not set up record / replay: {}", e.what());
-            }
-        } else if(enableHolisticRecordReplay || !recordPath.empty() || !replayPath.empty()) {
-            throw std::runtime_error("Holistic record/replay is only supported on RVC2 devices for now.");
+#ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
+bool PipelineImpl::hasDynamicCalibration() const {
+    // call this only with locked pipelineBuildMutex
+    for(const auto& node : getAllNodes()) {
+        const auto nodeName = std::string_view(node->getName());
+        if(nodeName == dai::node::DynamicCalibration::NAME || nodeName == dai::node::AutoCalibration::NAME) {
+            return true;
         }
     }
+    return false;
+}
+#else
+bool PipelineImpl::hasDynamicCalibration() const {
+    return false;
+}
+#endif
 
-    // Go through the build stages sequentially
+std::pair<std::shared_ptr<dai::node::Camera>, std::shared_ptr<dai::node::Camera>> PipelineImpl::getStereoPair() const {
+    if(!defaultDevice) {
+        return {nullptr, nullptr};
+    }
+    auto stereoSockets = defaultDevice->getStereoPairs();
+    if(stereoSockets.size() != 1) {
+        return {nullptr, nullptr};
+    }
+    std::pair<std::shared_ptr<dai::node::Camera>, std::shared_ptr<dai::node::Camera>> stereoPair = std::pair(nullptr, nullptr);
+    // call this only with locked pipelineBuildMutex
+    for(const auto& node : getAllNodes()) {
+        if(std::string_view(node->getName()) == dai::node::Camera::NAME) {
+            auto camera = std::static_pointer_cast<dai::node::Camera>(node);
+            auto boardSocket = camera->getBoardSocket();
+            if(boardSocket == stereoSockets[0].left) {
+                stereoPair.first = camera;
+            } else if(boardSocket == stereoSockets[0].right) {
+                stereoPair.second = camera;
+            }
+        }
+    }
+    return stereoPair;
+}
+
+void PipelineImpl::build() {
+    std::unique_lock<std::mutex> lock(pipelineBuildMutex);
+    if(isBuild) return;
+
+    // Replay setup can update runtime calibration, so run it before deriving AutoCalibration defaults.
+    utility::PipelineImplHelper::setupHolisticRecordAndReplay(shared_from_this());
+
+    // start ---Add AutoCalibration block---
+#ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
+    const auto pipelineAutoCalibrationMode = getAutoCalibrationMode();
+    const auto pipelineAutoCalibrationString = std::string(autoCalibrationModeToString(pipelineAutoCalibrationMode));
+    std::string autoCalibrationString = pipelineAutoCalibrationString;
+    std::optional<PipelineAutoCalibrationMode> autoCalibrationMode = pipelineAutoCalibrationMode;
+    if(!autoCalibrationModeSetByApi) {
+        autoCalibrationString = utility::getEnvAs<std::string>("DEPTHAI_AUTOCALIBRATION", "");
+        if(!autoCalibrationString.empty()) {
+            autoCalibrationMode = parseAutoCalibrationMode(autoCalibrationString);
+        }
+    }
+    #ifndef DEPTHAI_INTERNAL_DEVICE_BUILD_RVC4
+    if((autoCalibrationMode == PipelineAutoCalibrationMode::CONTINUOUS || autoCalibrationMode == PipelineAutoCalibrationMode::ON_START)
+       && hasDynamicCalibration()) {
+        Logging::getInstance().logger.info("Pipeline contains DynamicCalibration/AutoCalibration node. Disabling implicit AutoCalibration at startup.");
+        autoCalibrationMode = PipelineAutoCalibrationMode::OFF;
+    }
+
+    if(autoCalibrationMode == PipelineAutoCalibrationMode::CONTINUOUS || autoCalibrationMode == PipelineAutoCalibrationMode::ON_START) {
+        if(defaultDevice && defaultDevice->tryGetCalibration()) {
+            auto stereoPair = getStereoPair();
+
+            auto hasStereoPairValidCalibration = [&stereoPair](const std::shared_ptr<CalibrationHandler>& calibration) -> bool {
+                if(!calibration) return false;
+
+                const auto leftSocket = stereoPair.first->getBoardSocket();
+                const auto rightSocket = stereoPair.second->getBoardSocket();
+                if(!calibration->hasCameraCalibration(leftSocket) || !calibration->hasCameraCalibration(rightSocket)) {
+                    return false;
+                }
+
+                try {
+                    // getDefaultIntrinsics() validates intrinsic matrix shape/content and throws on invalid data.
+                    calibration->getDefaultIntrinsics(leftSocket);
+                    calibration->getDefaultIntrinsics(rightSocket);
+                    calibration->getCameraExtrinsics(leftSocket, rightSocket);
+                    return true;
+                } catch(const std::exception& ex) {
+                    return false;
+                }
+            };
+
+            if(stereoPair.first && stereoPair.second && hasStereoPairValidCalibration(defaultDevice->tryGetCalibration())) {
+                auto autoCalibrationNode = create<dai::node::AutoCalibration>(shared_from_this())->build(stereoPair.first, stereoPair.second);
+                Logging::getInstance().logger.info("AutoCalibration is initialized");
+
+                // Build-time flash safety: disable flashing when runtime calibration differs from EEPROM.
+                const auto runtimeCalibration = defaultDevice->tryGetCalibration();
+                bool allowFlashCalibration = autoCalibrationNode->initialConfig->flashCalibration;
+                if(allowFlashCalibration && runtimeCalibration) {
+                    try {
+                        const auto eepromCalibration = defaultDevice->readFactoryCalibration();
+
+                        bool compared = false;
+                        for(const auto socket : {stereoPair.first->getBoardSocket(), stereoPair.second->getBoardSocket()}) {
+                            if(socket == CameraBoardSocket::AUTO) {
+                                continue;
+                            }
+                            compared = true;
+                            if(hasDifferentDistortion(*runtimeCalibration, eepromCalibration, socket)) {
+                                allowFlashCalibration = false;
+                                Logging::getInstance().logger.info(
+                                    "AutoCalibration build-time flash safety: runtime calibration differs from EEPROM on socket {}. Disabling "
+                                    "flashCalibration.",
+                                    static_cast<int>(socket));
+                                break;
+                            }
+                        }
+
+                        if(!compared) {
+                            allowFlashCalibration = false;
+                            Logging::getInstance().logger.info(
+                                "AutoCalibration build-time flash safety: no valid stereo sockets to compare. Disabling flashCalibration.");
+                        }
+                    } catch(const std::exception& ex) {
+                        allowFlashCalibration = false;
+                        Logging::getInstance().logger.info(
+                            "AutoCalibration build-time flash safety: failed to read EEPROM calibration ({}). Disabling flashCalibration.", ex.what());
+                    }
+                }
+                autoCalibrationNode->initialConfig->flashCalibration = allowFlashCalibration;
+
+                if(autoCalibrationMode == PipelineAutoCalibrationMode::CONTINUOUS) {
+                    autoCalibrationNode->initialConfig->mode = dai::AutoCalibrationConfig::Mode::CONTINUOUS;
+                } else {
+                    autoCalibrationNode->initialConfig->mode = dai::AutoCalibrationConfig::Mode::ON_START;
+                }
+            }
+        } else {
+            if(isHostOnly()) {
+                Logging::getInstance().logger.info("DEPTHAI_AUTOCALIBRATION='{}' set on host-only pipeline. Skipping AutoCalibration node creation.",
+                                                   autoCalibrationString);
+            } else {
+                Logging::getInstance().logger.info("Device has no valid initial calibration. Skipping autocalibration.");
+            }
+        }
+    } else if(!autoCalibrationMode && !autoCalibrationString.empty()) {
+        Logging::getInstance().logger.warn("DEPTHAI_AUTOCALIBRATION can be CONTINUOUS, ON_START or OFF not {}", autoCalibrationString);
+    }
+    #endif
+#endif
+    // end of ---Add AutoCalibration block---
+
+    // Run first build stage for all nodes
     for(const auto& node : getAllNodes()) {
         node->buildStage1();
     }
 
+    // Go through the build stages sequentially
     for(const auto& node : getAllNodes()) {
         node->buildStage2();
     }
@@ -638,6 +942,8 @@ void PipelineImpl::build() {
     for(const auto& node : getAllNodes()) {
         node->buildStage3();
     }
+
+    utility::PipelineImplHelper::setupPipelineDebuggingPre(shared_from_this());
 
     // Go through all the connections and handle any
     // Host -> Device connections
@@ -663,18 +969,8 @@ void PipelineImpl::build() {
     //     connect them
 
     // Create a map of already visited nodes to only create one xlink bridge
-    struct XLinkOutBridge {
-        std::shared_ptr<node::internal::XLinkOut> xLinkOut;
-        std::shared_ptr<node::internal::XLinkInHost> xLinkInHost;
-    };
-
-    struct XLinkInBridge {
-        std::shared_ptr<node::internal::XLinkOutHost> xLinkOutHost;
-        std::shared_ptr<node::internal::XLinkIn> xLinkIn;
-    };
-
-    std::unordered_map<dai::Node::Output*, XLinkOutBridge> bridgesOut;
-    std::unordered_map<dai::Node::Input*, XLinkInBridge> bridgesIn;
+    std::unordered_map<dai::Node::Output*, dai::node::internal::XLinkOutBridge> bridgesOut;
+    std::unordered_map<dai::Node::Input*, dai::node::internal::XLinkInBridge> bridgesIn;
     std::unordered_set<std::string> uniqueStreamNames;
     for(auto& connection : getConnectionsInternal()) {
         auto inNode = connection.inputNode.lock();
@@ -687,7 +983,7 @@ void PipelineImpl::build() {
             // Check if the bridge already exists
             if(bridgesOut.count(connection.out) == 0) {  // If the bridge does not already exist, create one
                 // // Create a new bridge
-                bridgesOut[connection.out] = XLinkOutBridge{
+                bridgesOut[connection.out] = dai::node::internal::XLinkOutBridge{
                     create<node::internal::XLinkOut>(shared_from_this()),
                     create<node::internal::XLinkInHost>(shared_from_this()),
                 };
@@ -703,6 +999,11 @@ void PipelineImpl::build() {
                 xLinkBridge.xLinkInHost->setStreamName(streamName);
                 xLinkBridge.xLinkInHost->setConnection(defaultDevice->getConnection());
                 connection.out->link(xLinkBridge.xLinkOut->input);
+
+                // Note the created bridge for serialization (for visualization)
+                xlinkBridges.push_back({xLinkBridge.xLinkOut->id, xLinkBridge.xLinkInHost->id});
+                // Store the bridge in the Output object
+                connection.out->xLinkBridge = std::make_shared<dai::node::internal::XLinkOutBridge>(xLinkBridge);
             }
             auto xLinkBridge = bridgesOut[connection.out];
             connection.out->unlink(*connection.in);  // Unlink the connection
@@ -711,7 +1012,7 @@ void PipelineImpl::build() {
             // Check if the bridge already exists
             if(bridgesIn.count(connection.in) == 0) {  // If the bridge does not already exist, create one
                 // // Create a new bridge
-                bridgesIn[connection.in] = XLinkInBridge{
+                bridgesIn[connection.in] = dai::node::internal::XLinkInBridge{
                     create<node::internal::XLinkOutHost>(shared_from_this()),
                     create<node::internal::XLinkIn>(shared_from_this()),
                 };
@@ -727,11 +1028,12 @@ void PipelineImpl::build() {
                 xLinkBridge.xLinkIn->setStreamName(streamName);
                 xLinkBridge.xLinkOutHost->setConnection(defaultDevice->getConnection());
                 xLinkBridge.xLinkIn->out.link(*connection.in);
-                if(defaultDevice->getPlatform() == Platform::RVC4 || defaultDevice->getPlatform() == Platform::RVC3) {
-                    xLinkBridge.xLinkOutHost->allowStreamResize(true);
-                } else {
-                    xLinkBridge.xLinkOutHost->allowStreamResize(false);
-                }
+                xLinkBridge.xLinkOutHost->allowStreamResize(true);
+
+                // Note the created bridge for serialization (for visualization)
+                xlinkBridges.push_back({xLinkBridge.xLinkOutHost->id, xLinkBridge.xLinkIn->id});
+                // Store the bridge in the Input object
+                connection.in->xLinkBridge = std::make_shared<dai::node::internal::XLinkInBridge>(xLinkBridge);
             }
             auto xLinkBridge = bridgesIn[connection.in];
             connection.out->unlink(*connection.in);  // Unlink the original connection
@@ -751,7 +1053,7 @@ void PipelineImpl::build() {
                 // For every queue connection, if it's connected to a device node, create a bridge, if it doesn't exist
                 if(bridgesOut.count(queueConnection.output) == 0) {
                     // // Create a new bridge
-                    bridgesOut[queueConnection.output] = XLinkOutBridge{
+                    bridgesOut[queueConnection.output] = dai::node::internal::XLinkOutBridge{
                         create<node::internal::XLinkOut>(shared_from_this()),
                         create<node::internal::XLinkInHost>(shared_from_this()),
                     };
@@ -767,6 +1069,11 @@ void PipelineImpl::build() {
                     xLinkBridge.xLinkInHost->setStreamName(streamName);
                     xLinkBridge.xLinkInHost->setConnection(defaultDevice->getConnection());
                     queueConnection.output->link(xLinkBridge.xLinkOut->input);
+
+                    // Note the created bridge for serialization (for visualization)
+                    xlinkBridges.push_back({xLinkBridge.xLinkOut->id, xLinkBridge.xLinkInHost->id});
+                    // Store the bridge in the Output object
+                    queueConnection.output->xLinkBridge = std::make_shared<dai::node::internal::XLinkOutBridge>(xLinkBridge);
                 }
                 auto xLinkBridge = bridgesOut[queueConnection.output];
                 queueConnection.output->unlink(queueConnection.queue);  // Unlink the original connection
@@ -774,11 +1081,10 @@ void PipelineImpl::build() {
             }
         }
     }
-    // Build
-    if(!isHostOnly()) {
-        // TODO(Morato) - handle multiple devices correctly, start pipeline on all of them
-        defaultDevice->startPipeline(Pipeline(shared_from_this()));
-    }
+
+    utility::PipelineImplHelper::setupPipelineDebuggingPost(shared_from_this(), bridgesOut, bridgesIn);
+
+    isBuild = true;
 }
 
 void PipelineImpl::start() {
@@ -792,11 +1098,24 @@ void PipelineImpl::start() {
     //     }
     // }
 
+    // Starts pipeline, go through all nodes and start them
     // Implicitly build (if not already)
     build();
 
+    for(const auto& node : getAllNodes()) {
+        node->postBuildStage();
+    }
+
+    Logging::getInstance().logger.debug("Full schema dump: {}", ((nlohmann::json)getPipelineSchema(SerializationType::JSON, false)).dump());
+
     // Indicate that pipeline is running
     running = true;
+
+    // Start device pipeline if not host-only
+    if(!isHostOnly()) {
+        DAI_CHECK_V(defaultDevice, "Default device is null");
+        defaultDevice->startPipeline(Pipeline(shared_from_this()));
+    }
 
     // Starts pipeline, go through all nodes and start them
     for(const auto& node : getAllNodes()) {
@@ -810,6 +1129,23 @@ void PipelineImpl::start() {
         std::shared_ptr<PipelineImpl> shared = shared_from_this();
         const auto weak = std::weak_ptr<PipelineImpl>(shared);
         defaultDevice->pipelinePtr = weak;
+    }
+
+    // Setup pipeline state trace logging if enabled
+    if(buildingOnHost && utility::getEnvAs<bool>("DEPTHAI_PIPELINE_DEBUGGING", false)) {
+        if(pipelineStateTraceOut) {
+            PipelineEventAggregationConfig cfg;
+            cfg.repeatIntervalSeconds = 1;
+            cfg.setTimestamp(std::chrono::steady_clock::now());
+            pipelineStateTraceRequest->send(std::make_shared<PipelineEventAggregationConfig>(cfg));
+
+            pipelineStateTraceOut->addCallback([](const std::shared_ptr<ADatatype>& data) {
+                if(data) {
+                    auto state = std::dynamic_pointer_cast<const PipelineState>(data);
+                    if(state) Logging::getInstance().logger.trace("Pipeline state update: {}", state->toJson().dump());
+                }
+            });
+        }
     }
 }
 
@@ -868,9 +1204,10 @@ void PipelineImpl::stop() {
 
     // Close the task queue
     tasks.destruct();
-    // TODO(Morato) - handle multiple devices correctly, stop pipeline on all of them
-    // Close the devices
-    if(!isHostOnly()) {
+
+    // Close device if present - a pipeline might be host only and still have a device
+    // For example, one only adds host nodes
+    if(defaultDevice) {
         defaultDevice->close();
     }
 
@@ -882,43 +1219,7 @@ PipelineImpl::~PipelineImpl() {
     stop();
     wait();
 
-    if(recordConfig.state == RecordConfig::RecordReplayState::RECORD) {
-        std::vector<std::filesystem::path> filenames = {recordReplayFilenames["record_config"]};
-        std::vector<std::string> outFiles = {"record_config.json"};
-        filenames.reserve(recordReplayFilenames.size() * 2 + 1);
-        outFiles.reserve(recordReplayFilenames.size() * 2 + 1);
-        for(auto& rstr : recordReplayFilenames) {
-            if(rstr.first != "record_config") {
-                std::string nodeName = rstr.first.substr(2);
-                std::filesystem::path filePath = rstr.second;
-                filenames.push_back(std::filesystem::path(filePath).concat(".mcap"));
-                outFiles.push_back(nodeName + ".mcap");
-                if(rstr.first[0] == 'v') {
-                    filenames.push_back(std::filesystem::path(filePath).concat(".mp4"));
-                    outFiles.push_back(nodeName + ".mp4");
-                }
-            }
-        }
-        Logging::getInstance().logger.info("Record: Creating tar file with {} files", filenames.size());
-        try {
-            utility::tarFiles(platform::joinPaths(recordConfig.outputDir, "recording.tar"), filenames, outFiles);
-        } catch(const std::exception& e) {
-            Logging::getInstance().logger.error("Record: Failed to create tar file: {}", e.what());
-        }
-        std::filesystem::remove(platform::joinPaths(recordConfig.outputDir, "record_config.json"));
-    }
-
-    if(removeRecordReplayFiles && recordConfig.state != RecordConfig::RecordReplayState::NONE) {
-        Logging::getInstance().logger.info("Record and Replay: Removing temporary files");
-        for(auto& kv : recordReplayFilenames) {
-            if(kv.first != "record_config") {
-                std::filesystem::remove(std::filesystem::path(kv.second).concat(".mcap"));
-                std::filesystem::remove(std::filesystem::path(kv.second).concat(".mp4"));
-            } else {
-                std::filesystem::remove(kv.second);
-            }
-        }
-    }
+    utility::PipelineImplHelper::finishHolisticRecordAndReplay(this);
 }
 
 void PipelineImpl::run() {
@@ -1036,5 +1337,43 @@ void Pipeline::enableHolisticReplay(const std::string& pathToRecording) {
     impl()->recordConfig.outputDir = pathToRecording;
     impl()->recordConfig.state = RecordConfig::RecordReplayState::REPLAY;
     impl()->enableHolisticRecordReplay = true;
+    if(getDefaultDevice() != nullptr) {
+        getDefaultDevice()->mockCameraFeatures(pathToRecording);
+    }
 }
+
+bool Pipeline::isHolisticRecordEnabled() const {
+    auto envPath = utility::getEnvAs<std::string>("DEPTHAI_RECORD", "");
+    return impl()->recordConfig.state == RecordConfig::RecordReplayState::RECORD
+           || (!this->isBuilt() && !envPath.empty() && platform::checkPathExists(envPath, true));
+}
+
+bool Pipeline::isHolisticReplayEnabled() const {
+    auto envPath = utility::getEnvAs<std::string>("DEPTHAI_REPLAY", "");
+    return impl()->recordConfig.state == RecordConfig::RecordReplayState::REPLAY
+           || (!this->isBuilt() && !envPath.empty() && platform::checkPathExists(envPath, false));
+}
+
+void Pipeline::enablePipelineDebugging(bool enable) {
+    if(this->isBuilt()) {
+        throw std::runtime_error("Cannot change pipeline debugging state after pipeline is built");
+    }
+    impl()->enablePipelineDebugging = enable;
+}
+
+bool Pipeline::isPipelineDebuggingEnabled() const {
+    return impl()->enablePipelineDebugging;
+}
+
+std::shared_ptr<MessageQueue> Pipeline::getPipelineStateOut() const {
+    return impl()->pipelineStateOut;
+}
+std::shared_ptr<InputQueue> Pipeline::getPipelineStateRequest() const {
+    return impl()->pipelineStateRequest;
+}
+
+PipelineStateApi Pipeline::getPipelineState() {
+    return impl()->getPipelineState();
+}
+
 }  // namespace dai

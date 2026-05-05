@@ -6,6 +6,7 @@
 #define _USE_MATH_DEFINES
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <memory>
@@ -71,8 +72,9 @@ inline std::shared_ptr<Buffer> getMessage(const std::shared_ptr<google::protobuf
         case DatatypeEnum::ImgDetections:
         case DatatypeEnum::SpatialImgDetections:
         case DatatypeEnum::SystemInformation:
-        case DatatypeEnum::SystemInformationS3:
+        case DatatypeEnum::SystemInformationRVC4:
         case DatatypeEnum::SpatialLocationCalculatorConfig:
+        case DatatypeEnum::SegmentationParserConfig:
         case DatatypeEnum::SpatialLocationCalculatorData:
         case DatatypeEnum::EdgeDetectorConfig:
         case DatatypeEnum::AprilTagConfig:
@@ -80,11 +82,13 @@ inline std::shared_ptr<Buffer> getMessage(const std::shared_ptr<google::protobuf
         case DatatypeEnum::Tracklets:
         case DatatypeEnum::StereoDepthConfig:
         case DatatypeEnum::FeatureTrackerConfig:
+        case DatatypeEnum::GateControl:
         case DatatypeEnum::ThermalConfig:
         case DatatypeEnum::ToFConfig:
         case DatatypeEnum::TrackedFeatures:
         case DatatypeEnum::BenchmarkReport:
         case DatatypeEnum::MessageGroup:
+        case DatatypeEnum::MapData:
         case DatatypeEnum::TransformData:
         case DatatypeEnum::PointCloudConfig:
         case DatatypeEnum::ImageAlignConfig:
@@ -95,8 +99,19 @@ inline std::shared_ptr<Buffer> getMessage(const std::shared_ptr<google::protobuf
         case DatatypeEnum::ObjectTrackerConfig:
         case DatatypeEnum::DynamicCalibrationControl:
         case DatatypeEnum::DynamicCalibrationResult:
+        case DatatypeEnum::AutoCalibrationConfig:
+        case DatatypeEnum::AutoCalibrationResult:
         case DatatypeEnum::CalibrationQuality:
+        case DatatypeEnum::CalibrationMetrics:
         case DatatypeEnum::CoverageData:
+        case DatatypeEnum::PipelineEvent:
+        case DatatypeEnum::PipelineState:
+        case DatatypeEnum::PipelineEventAggregationConfig:
+        case DatatypeEnum::NeuralDepthConfig:
+        case DatatypeEnum::SegmentationMask:
+        case DatatypeEnum::VppConfig:
+        case DatatypeEnum::PacketizedData:
+        case DatatypeEnum::COUNT:
             break;
     }
     throw std::runtime_error("Cannot replay message type: " + std::to_string((int)datatype));
@@ -140,10 +155,12 @@ inline std::shared_ptr<google::protobuf::Message> getProtoMessage(utility::ByteP
         case DatatypeEnum::ImgDetections:
         case DatatypeEnum::SpatialImgDetections:
         case DatatypeEnum::SystemInformation:
-        case DatatypeEnum::SystemInformationS3:
+        case DatatypeEnum::SystemInformationRVC4:
         case DatatypeEnum::SpatialLocationCalculatorConfig:
+        case DatatypeEnum::SegmentationParserConfig:
         case DatatypeEnum::SpatialLocationCalculatorData:
         case DatatypeEnum::EdgeDetectorConfig:
+        case DatatypeEnum::GateControl:
         case DatatypeEnum::AprilTagConfig:
         case DatatypeEnum::AprilTags:
         case DatatypeEnum::Tracklets:
@@ -154,6 +171,7 @@ inline std::shared_ptr<google::protobuf::Message> getProtoMessage(utility::ByteP
         case DatatypeEnum::TrackedFeatures:
         case DatatypeEnum::BenchmarkReport:
         case DatatypeEnum::MessageGroup:
+        case DatatypeEnum::MapData:
         case DatatypeEnum::TransformData:
         case DatatypeEnum::PointCloudConfig:
         case DatatypeEnum::ImageAlignConfig:
@@ -164,12 +182,47 @@ inline std::shared_ptr<google::protobuf::Message> getProtoMessage(utility::ByteP
         case DatatypeEnum::ObjectTrackerConfig:
         case DatatypeEnum::DynamicCalibrationControl:
         case DatatypeEnum::DynamicCalibrationResult:
+        case DatatypeEnum::AutoCalibrationConfig:
+        case DatatypeEnum::AutoCalibrationResult:
         case DatatypeEnum::CalibrationQuality:
+        case DatatypeEnum::CalibrationMetrics:
         case DatatypeEnum::CoverageData:
+        case DatatypeEnum::PipelineEvent:
+        case DatatypeEnum::PipelineState:
+        case DatatypeEnum::PipelineEventAggregationConfig:
+        case DatatypeEnum::NeuralDepthConfig:
+        case DatatypeEnum::SegmentationMask:
+        case DatatypeEnum::VppConfig:
+        case DatatypeEnum::PacketizedData:
+        case DatatypeEnum::COUNT:
             throw std::runtime_error("Cannot replay message type: " + std::to_string((int)datatype));
     }
     return {};
 }
+
+inline std::chrono::milliseconds getReplayFallbackInterval(const std::optional<float>& fps) {
+    if(fps.has_value() && fps.value() > 0.1f) {
+        return std::chrono::milliseconds((uint32_t)roundf(1000.f / fps.value()));
+    }
+    return std::chrono::milliseconds(33);
+}
+
+inline std::chrono::milliseconds ensureReplayInterval(std::chrono::milliseconds interval, const std::optional<float>& fps) {
+    if(interval == std::chrono::milliseconds::zero()) {
+        return getReplayFallbackInterval(fps);
+    }
+    return interval;
+}
+
+struct LoopState {
+    int64_t firstSeqNum = 0;
+    int64_t lastSeqNum = 0;
+    int64_t seqNumOffset = 0;
+    std::chrono::time_point<std::chrono::steady_clock> firstTs;
+    std::chrono::time_point<std::chrono::steady_clock> lastTs;
+    std::chrono::milliseconds lastInterval{0};
+    std::chrono::time_point<std::chrono::steady_clock> tsOffset;
+};
 #endif
 
 void ReplayVideo::run() {
@@ -206,9 +259,11 @@ void ReplayVideo::run() {
     bool first = true;
     auto start = std::chrono::steady_clock::now();
     uint64_t index = 0;
+    LoopState loopState;
+
     auto loopStart = std::chrono::steady_clock::now();
     auto prevMsgTs = loopStart;
-    while(isRunning()) {
+    while(mainLoop()) {
         std::shared_ptr<proto::img_frame::ImgFrame> metadata;
         std::vector<uint8_t> frame;
         if(hasMetadata) {
@@ -221,12 +276,17 @@ void ReplayVideo::run() {
             } else if(!first) {
                 // End of file
                 if(loop) {
+                    loopState.seqNumOffset = loopState.lastSeqNum + 1;
+                    loopState.lastInterval = ensureReplayInterval(loopState.lastInterval, fps);
+                    loopState.tsOffset = loopState.lastTs + loopState.lastInterval;
                     bytePlayer.restart();
                     if(hasVideo) {
                         videoPlayer.restart();
                     }
                     continue;
                 }
+                // This will stop even if there is still frames in the pipeline
+                stopPipeline();
                 break;
             } else {
                 hasMetadata = false;
@@ -240,11 +300,16 @@ void ReplayVideo::run() {
                 // End of file
                 if(loop) {
                     if(hasMetadata) {
+                        loopState.seqNumOffset = loopState.lastSeqNum + 1;
+                        loopState.lastInterval = ensureReplayInterval(loopState.lastInterval, fps);
+                        loopState.tsOffset = loopState.lastTs + loopState.lastInterval;
                         bytePlayer.restart();
                     }
                     videoPlayer.restart();
                     continue;
                 }
+                // This will stop even if there is still frames in the pipeline
+                stopPipeline();
                 break;
             } else {
                 hasVideo = false;
@@ -280,13 +345,37 @@ void ReplayVideo::run() {
 
         auto buffer = getVideoMessage(*metadata, outFrameType, frame);
 
-        if(first) prevMsgTs = buffer->getTimestampDevice();
-
-        if(hasMetadata && !(fps.has_value() && fps.value() > 0.1f)) {
-            std::this_thread::sleep_until(loopStart + (buffer->getTimestampDevice() - prevMsgTs));
+        if(first) {
+            loopState.firstSeqNum = buffer->getSequenceNum() > 0 ? buffer->getSequenceNum() : 0;
+            loopState.seqNumOffset = loopState.firstSeqNum;
+            prevMsgTs = buffer->getTimestampDevice();
+            loopState.firstTs = buffer->getTimestamp();
+            loopState.lastTs = loopState.firstTs;
+            loopState.lastInterval = ensureReplayInterval(std::chrono::milliseconds::zero(), fps);
+            loopState.tsOffset = loopState.firstTs;
         }
 
-        if(buffer) out.send(buffer);
+        // Update sequence num and timestamps for looping
+        buffer->setSequenceNum(buffer->getSequenceNum() - loopState.firstSeqNum + loopState.seqNumOffset);
+        loopState.lastSeqNum = buffer->getSequenceNum();
+        auto deviceTsOffset = buffer->getTimestamp() - buffer->getTimestampDevice();
+        buffer->setTimestamp(buffer->getTimestamp() - loopState.firstTs + loopState.tsOffset);
+        buffer->setTimestampDevice(buffer->getTimestamp() - deviceTsOffset);
+        if(!first) {
+            loopState.lastInterval = std::chrono::duration_cast<std::chrono::milliseconds>(buffer->getTimestamp() - loopState.lastTs);
+        }
+        loopState.lastTs = buffer->getTimestamp();
+
+        if(hasMetadata && !(fps.has_value() && fps.value() > 0.1f)) {
+            auto sleepInterval = std::chrono::duration_cast<std::chrono::milliseconds>(buffer->getTimestampDevice() - prevMsgTs);
+            sleepInterval = ensureReplayInterval(sleepInterval, fps);
+            std::this_thread::sleep_until(loopStart + sleepInterval);
+        }
+
+        {
+            auto blockEvent = this->outputBlockEvent();
+            if(buffer) out.send(buffer);
+        }
 
         if(fps.has_value() && fps.value() > 0.1f) {
             std::this_thread::sleep_until(loopStart + std::chrono::milliseconds((uint32_t)roundf(1000.f / fps.value())));
@@ -300,14 +389,6 @@ void ReplayVideo::run() {
         first = false;
     }
     logger->info("Replay finished - stopping the pipeline!");
-    try {
-        stopPipeline();
-    } catch(const std::exception& e) {
-        // FIXME: This is a workaround for a bug in the pipeline
-        if(e.what() != std::string("Pipeline is null")) {
-            throw;
-        }
-    }
 #else
     throw std::runtime_error("ReplayVideo node requires protobuf support");
 #endif
@@ -333,9 +414,11 @@ void ReplayMetadataOnly::run() {
         throw std::runtime_error("Metadata file not found");
     }
     bool first = true;
+    LoopState loopState;
+
     auto loopStart = std::chrono::steady_clock::now();
     auto prevMsgTs = loopStart;
-    while(isRunning()) {
+    while(mainLoop()) {
         std::shared_ptr<google::protobuf::Message> metadata;
         std::vector<uint8_t> frame;
         if(!utility::deserializationSupported(datatype)) {
@@ -347,22 +430,51 @@ void ReplayMetadataOnly::run() {
         } else if(!first) {
             // End of file
             if(loop) {
+                loopState.seqNumOffset = loopState.lastSeqNum + 1;
+                loopState.lastInterval = ensureReplayInterval(loopState.lastInterval, fps);
+                loopState.tsOffset = loopState.lastTs + loopState.lastInterval;
                 bytePlayer.restart();
                 continue;
             }
+            // This will stop even if there is still frames in the pipeline
+            stopPipeline();
             break;
         } else {
             throw std::runtime_error("Metadata file contains no messages");
         }
         auto buffer = getMessage(metadata, datatype);
 
-        if(first) prevMsgTs = buffer->getTimestampDevice();
-
-        if(!(fps.has_value() && fps.value() > 0.1f)) {
-            std::this_thread::sleep_until(loopStart + (buffer->getTimestampDevice() - prevMsgTs));
+        if(first) {
+            loopState.firstSeqNum = buffer->getSequenceNum() > 0 ? buffer->getSequenceNum() : 0;
+            loopState.seqNumOffset = loopState.firstSeqNum;
+            prevMsgTs = buffer->getTimestampDevice();
+            loopState.firstTs = buffer->getTimestamp();
+            loopState.lastTs = loopState.firstTs;
+            loopState.lastInterval = ensureReplayInterval(std::chrono::milliseconds::zero(), fps);
+            loopState.tsOffset = loopState.firstTs;
         }
 
-        if(buffer) out.send(buffer);
+        // Update sequence num and timestamps for looping
+        buffer->setSequenceNum(buffer->getSequenceNum() - loopState.firstSeqNum + loopState.seqNumOffset);
+        loopState.lastSeqNum = buffer->getSequenceNum();
+        auto deviceTsOffset = buffer->getTimestamp() - buffer->getTimestampDevice();
+        buffer->setTimestamp(buffer->getTimestamp() - loopState.firstTs + loopState.tsOffset);
+        buffer->setTimestampDevice(buffer->getTimestamp() - deviceTsOffset);
+        if(!first) {
+            loopState.lastInterval = std::chrono::duration_cast<std::chrono::milliseconds>(buffer->getTimestamp() - loopState.lastTs);
+        }
+        loopState.lastTs = buffer->getTimestamp();
+
+        if(!(fps.has_value() && fps.value() > 0.1f)) {
+            auto sleepInterval = std::chrono::duration_cast<std::chrono::milliseconds>(buffer->getTimestampDevice() - prevMsgTs);
+            sleepInterval = ensureReplayInterval(sleepInterval, fps);
+            std::this_thread::sleep_until(loopStart + sleepInterval);
+        }
+
+        {
+            auto blockEvent = this->outputBlockEvent();
+            if(buffer) out.send(buffer);
+        }
 
         if(fps.has_value() && fps.value() > 0.1f) {
             std::this_thread::sleep_until(loopStart + std::chrono::milliseconds((uint32_t)roundf(1000.f / fps.value())));
@@ -372,14 +484,6 @@ void ReplayMetadataOnly::run() {
         prevMsgTs = buffer->getTimestampDevice();
 
         first = false;
-    }
-    try {
-        stopPipeline();
-    } catch(const std::exception& e) {
-        // FIXME: This is a workaround for a bug in the pipeline
-        if(e.what() != std::string("Pipeline is null")) {
-            throw;
-        }
     }
 #else
     throw std::runtime_error("ReplayMetadataOnly node requires protobuf support");

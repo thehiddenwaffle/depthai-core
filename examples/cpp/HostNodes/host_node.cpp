@@ -1,6 +1,14 @@
+#include <atomic>
+#include <csignal>
 #include <memory>
 
 #include "depthai/depthai.hpp"
+
+std::atomic<bool> quitEvent(false);
+
+void signalHandler(int) {
+    quitEvent = true;
+}
 
 class Display : public dai::NodeCRTP<dai::node::HostNode, Display> {
    public:
@@ -8,9 +16,14 @@ class Display : public dai::NodeCRTP<dai::node::HostNode, Display> {
 
     std::shared_ptr<Display> build(Output& out) {
         out.link(input);
+        sendProcessingToPipeline(true);
         return std::static_pointer_cast<Display>(this->shared_from_this());
     }
     std::shared_ptr<dai::Buffer> processGroup(std::shared_ptr<dai::MessageGroup> in) override {
+        if(quitEvent) {
+            stopPipeline();
+            return nullptr;
+        }
         auto frame = in->get<dai::ImgFrame>("in");
         cv::Mat frameCv = frame->getCvFrame();
         cv::imshow("Display", frameCv);
@@ -58,6 +71,9 @@ class StreamMerger : public dai::NodeCRTP<dai::node::HostNode, StreamMerger> {
 };
 
 int main() {
+    signal(SIGTERM, signalHandler);
+    signal(SIGINT, signalHandler);
+
     // Create pipeline
     dai::Pipeline pipeline;
 
@@ -68,7 +84,6 @@ int main() {
         pipeline.create<StreamMerger>()->build(*camRgb->requestOutput(std::make_pair(640, 480)), *camMono->requestOutput(std::make_pair(640, 480)));
     auto display = pipeline.create<Display>()->build(streamMerger->out);
 
-    pipeline.start();
-    pipeline.wait();
+    pipeline.run();
     return 0;
 }

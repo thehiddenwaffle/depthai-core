@@ -1,5 +1,8 @@
+#include <spdlog/spdlog.h>
+
 #include <depthai/pipeline/DeviceNode.hpp>
 #include <memory>
+#include <thread>
 
 #include "depthai/pipeline/InputQueue.hpp"
 #include "depthai/pipeline/Pipeline.hpp"
@@ -241,8 +244,16 @@ void Node::Output::send(const std::shared_ptr<ADatatype>& msg) {
     //         }
     //     }
     // }
-    for(auto& messageQueue : connectedInputs) {
-        messageQueue->send(msg);
+    auto sendToInputs = [this, &msg]() {
+        for(auto& messageQueue : connectedInputs) {
+            messageQueue->send(msg);
+        }
+    };
+    if(pipelineEventDispatcher && pipelineEventDispatcher->sendEvents) {
+        auto blockEvent = pipelineEventDispatcher->blockEvent(PipelineEvent::Type::OUTPUT, getName());
+        sendToInputs();
+    } else {
+        sendToInputs();
     }
 }
 
@@ -263,8 +274,19 @@ bool Node::Output::trySend(const std::shared_ptr<ADatatype>& msg) {
     //         }
     //     }
     // }
-    for(auto& messageQueue : connectedInputs) {
-        success &= messageQueue->trySend(msg);
+    auto sendToInputs = [this, &msg, &success]() {
+        for(auto& messageQueue : connectedInputs) {
+            success &= messageQueue->trySend(msg);
+        }
+    };
+    if(pipelineEventDispatcher && pipelineEventDispatcher->sendEvents) {
+        auto blockEvent = pipelineEventDispatcher->blockEvent(PipelineEvent::Type::OUTPUT, getName());
+        sendToInputs();
+        if(!success) {
+            blockEvent.cancel();
+        }
+    } else {
+        sendToInputs();
     }
 
     return success;
@@ -316,9 +338,10 @@ Node::OutputMap::OutputMap(Node& parent, Node::OutputDescription defaultOutput, 
 Node::Output& Node::OutputMap::operator[](const std::string& key) {
     if(count({name, key}) == 0) {
         // Create using default and rename with group and key
-        Output output(parent, defaultOutput, false);
-        output.setGroup(name);
-        output.setName(key);
+        auto desc = defaultOutput;
+        desc.group = name;
+        desc.name = key;
+        Output output(parent, desc, false);
         insert({{name, key}, output});
     }
     // otherwise just return reference to existing
@@ -327,11 +350,11 @@ Node::Output& Node::OutputMap::operator[](const std::string& key) {
 Node::Output& Node::OutputMap::operator[](std::pair<std::string, std::string> groupKey) {
     if(count(groupKey) == 0) {
         // Create using default and rename with group and key
-        Output output(parent, defaultOutput, false);
-
+        auto desc = defaultOutput;
         // Uses \t (tab) as a special character to parse out as subgroup name
-        output.setGroup(fmt::format("{}\t{}", name, groupKey.first));
-        output.setName(groupKey.second);
+        desc.group = fmt::format("{}\t{}", name, groupKey.first);
+        desc.name = groupKey.second;
+        Output output(parent, desc, false);
         insert(std::make_pair(groupKey, output));
     }
     // otherwise just return reference to existing
@@ -348,9 +371,10 @@ Node::InputMap::InputMap(Node& parent, Node::InputDescription description) : Inp
 Node::Input& Node::InputMap::operator[](const std::string& key) {
     if(count({name, key}) == 0) {
         // Create using default and rename with group and key
-        Input input(parent, defaultInput, false);
-        input.setGroup(name);
-        input.setName(key);
+        auto desc = defaultInput;
+        desc.group = name;
+        desc.name = key;
+        Input input(parent, desc, false);
         insert({{name, key}, input});
     }
     // otherwise just return reference to existing
@@ -359,11 +383,11 @@ Node::Input& Node::InputMap::operator[](const std::string& key) {
 Node::Input& Node::InputMap::operator[](std::pair<std::string, std::string> groupKey) {
     if(count(groupKey) == 0) {
         // Create using default and rename with group and key
-        Input input(parent, defaultInput, false);
-
+        auto desc = defaultInput;
         // Uses \t (tab) as a special character to parse out as subgroup name
-        input.setGroup(fmt::format("{}\t{}", name, groupKey.first));
-        input.setName(groupKey.second);
+        desc.group = fmt::format("{}\t{}", name, groupKey.first);
+        desc.name = groupKey.second;
+        Input input(parent, desc, false);
         insert(std::make_pair(groupKey, input));
     }
     // otherwise just return reference to existing
@@ -572,6 +596,9 @@ void Node::buildStage2() {
 void Node::buildStage3() {
     return;
 };
+void Node::postBuildStage() {
+    return;
+};
 
 void Node::setNodeRefs(std::initializer_list<std::pair<std::string, std::shared_ptr<Node>*>> l) {
     for(auto& nodeRef : l) {
@@ -704,8 +731,24 @@ size_t Node::ConnectionInternal::Hash::operator()(const dai::Node::ConnectionInt
 }
 
 void Node::stopPipeline() {
-    auto pipeline = getParentPipeline();
-    pipeline.stop();
+    try {
+        auto pipeline = getParentPipeline();
+        // stopPipeline() is only called from host node threads. Hand shutdown off to a
+        // helper thread so PipelineImpl teardown never tries to join the current node thread.
+        std::thread([pipeline = std::move(pipeline)]() mutable {
+            try {
+                pipeline.stop();
+            } catch(const std::exception& ex) {
+                spdlog::error("Pipeline stop failed in detached shutdown thread: {}", ex.what());
+            } catch(...) {
+                spdlog::error("Pipeline stop failed in detached shutdown thread with an unknown exception");
+            }
+        }).detach();
+    } catch(const std::exception& e) {
+        if(e.what() != std::string("Pipeline is null")) {
+            throw;
+        }
+    }
 }
 
 void Node::Output::link(std::shared_ptr<Node> in) {
@@ -757,6 +800,14 @@ void Node::Input::setPossibleDatatypes(std::vector<Node::DatatypeHierarchy> type
 
 std::vector<Node::DatatypeHierarchy> Node::Input::getPossibleDatatypes() const {
     return possibleDatatypes;
+}
+
+std::shared_ptr<dai::node::internal::XLinkInBridge> Node::Input::getXLinkBridge() const {
+    return xLinkBridge;
+}
+
+std::shared_ptr<dai::node::internal::XLinkOutBridge> Node::Output::getXLinkBridge() const {
+    return xLinkBridge;
 }
 
 }  // namespace dai
