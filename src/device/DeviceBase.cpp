@@ -1774,8 +1774,8 @@ void DeviceBase::flashCalibration(CalibrationHandler calibrationDataHandler, Cam
 
     bool success;
     std::string errorMsg;
-    std::tie(success, errorMsg) =
-        pimpl->rpcCallChecked<std::tuple<bool, std::string>>("storeToEeprom", calibrationDataHandler.getEepromData(), factoryPermissions, protectedPermissions, camSocket);
+    std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>(
+        "storeToEeprom", calibrationDataHandler.getEepromData(), factoryPermissions, protectedPermissions, camSocket);
 
     if(!success) {
         throw EepromError(errorMsg);
@@ -1940,6 +1940,27 @@ std::vector<std::uint8_t> DeviceBase::readCalibrationRaw(CameraBoardSocket camSo
     return eepromDataRaw;
 }
 
+std::vector<std::uint8_t> DeviceBase::readCcmEepromRaw(CameraBoardSocket socket, int size, int offset) {
+    bool success;
+    std::string errorMsg;
+    std::vector<uint8_t> eepromDataRaw;
+    std::tie(success, errorMsg, eepromDataRaw) =
+        pimpl->rpcClient->call("readCcmEepromRaw", socket, size, offset).as<std::tuple<bool, std::string, std::vector<uint8_t>>>();
+    if(!success) {
+        throw EepromError(errorMsg);
+    }
+    return eepromDataRaw;
+}
+
+void DeviceBase::writeCcmEepromRaw(CameraBoardSocket socket, std::vector<uint8_t> data, int offset) {
+    bool success;
+    std::string errorMsg;
+    std::tie(success, errorMsg) = pimpl->rpcClient->call("writeCcmEepromRaw", socket, data, offset).as<std::tuple<bool, std::string>>();
+    if(!success) {
+        throw EepromError(errorMsg);
+    }
+}
+
 std::vector<std::uint8_t> DeviceBase::readFactoryCalibrationRaw() {
     return readFactoryCalibrationRaw(CameraBoardSocket::AUTO);
 }
@@ -1948,7 +1969,8 @@ std::vector<std::uint8_t> DeviceBase::readFactoryCalibrationRaw(CameraBoardSocke
     bool success;
     std::string errorMsg;
     std::vector<uint8_t> eepromDataRaw;
-    std::tie(success, errorMsg, eepromDataRaw) = pimpl->rpcCallChecked<std::tuple<bool, std::string, std::vector<uint8_t>>>("readFromEepromFactoryRaw", camSocket);
+    std::tie(success, errorMsg, eepromDataRaw) =
+        pimpl->rpcCallChecked<std::tuple<bool, std::string, std::vector<uint8_t>>>("readFromEepromFactoryRaw", camSocket);
     if(!success) {
         throw EepromError(errorMsg);
     }
@@ -1993,7 +2015,8 @@ void DeviceBase::flashFactoryEepromClear(CameraBoardSocket camSocket) {
 
     bool success;
     std::string errorMsg;
-    std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>("eepromFactoryClear", protectedPermissions, factoryPermissions, camSocket);
+    std::tie(success, errorMsg) =
+        pimpl->rpcCallChecked<std::tuple<bool, std::string>>("eepromFactoryClear", protectedPermissions, factoryPermissions, camSocket);
     if(!success) {
         throw EepromError(errorMsg);
     }

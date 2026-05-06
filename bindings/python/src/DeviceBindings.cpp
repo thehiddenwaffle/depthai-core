@@ -21,6 +21,7 @@
 // hedley
 #include <hedley/hedley.h>
 // STL Bind
+#include <pybind11/numpy.h>
 #include <pybind11/pytypes.h>
 #include <pybind11/stl_bind.h>
 
@@ -894,6 +895,34 @@ void DeviceBindings::bind(pybind11::module& m, void* pCallstack) {
             },
             py::arg("camSocket"),
             DOC(dai, DeviceBase, readFactoryCalibrationRaw, 2))
+        .def(
+            "readCcmEepromRaw",
+            [](DeviceBase& d, CameraBoardSocket s, int sz, int o) {
+                std::vector<uint8_t> data;
+                {
+                    py::gil_scoped_release release;
+                    data = d.readCcmEepromRaw(s, sz, o);
+                }
+                return py::bytes(reinterpret_cast<const char*>(data.data()), data.size());
+            },
+            py::arg("socket"),
+            py::arg("size"),
+            py::arg("offset") = 0,
+            DOC(dai, DeviceBase, readCcmEepromRaw))
+        .def(
+            "writeCcmEepromRaw",
+            [](DeviceBase& d, CameraBoardSocket s, py::bytes buf, int o) {
+                py::gil_scoped_release release;
+
+                std::string_view sv = buf;
+
+                return d.writeCcmEepromRaw(s, std::vector<uint8_t>(sv.begin(), sv.end()), o);
+            },
+            py::arg("socket"),
+            py::arg("data"),
+            py::arg("offset") = 0,
+            DOC(dai, DeviceBase, writeCcmEepromRaw))
+
         .def(
             "flashEepromClear",
             [](DeviceBase& d) {
