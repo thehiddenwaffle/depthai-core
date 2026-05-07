@@ -264,7 +264,22 @@ dcl::ImageData DclUtils::cvMatToImageData(const cv::Mat& mat) {
 }
 #endif
 
-dai::CalibrationQuality calibQualityfromDCL(const dcl::CalibrationDifference& src) {
+float sampsonErrorScalePx(const CalibrationHandler& calibrationHandler, CameraBoardSocket socket, const std::pair<int, int>& resolution) {
+    const auto intrinsics = calibrationHandler.getCameraIntrinsics(socket, resolution.first, resolution.second);
+    return 0.5f * (intrinsics.at(0).at(0) + intrinsics.at(1).at(1));
+}
+
+float sampsonErrorToPixels(float sampsonErrorNormalized,
+                           const CalibrationHandler& calibrationHandler,
+                           CameraBoardSocket socket,
+                           const std::pair<int, int>& resolution) {
+    return sampsonErrorNormalized * sampsonErrorScalePx(calibrationHandler, socket, resolution);
+}
+
+dai::CalibrationQuality calibQualityfromDCL(const dcl::CalibrationDifference& src,
+                                            const CalibrationHandler& calibrationHandler,
+                                            CameraBoardSocket socket,
+                                            const std::pair<int, int>& resolution) {
     dai::CalibrationQuality quality;
 
     CalibrationQuality::Data data{};
@@ -272,8 +287,8 @@ dai::CalibrationQuality calibQualityfromDCL(const dcl::CalibrationDifference& sr
     data.rotationChange[1] = src.rotationChange[1];
     data.rotationChange[2] = src.rotationChange[2];
     data.depthErrorDifference = src.depthDistanceDifference;
-    data.sampsonErrorCurrent = src.sampsonErrorCurrent;
-    data.sampsonErrorNew = src.sampsonErrorNew;
+    data.sampsonErrorCurrent = sampsonErrorToPixels(src.sampsonErrorCurrent, calibrationHandler, socket, resolution);
+    data.sampsonErrorNew = sampsonErrorToPixels(src.sampsonErrorNew, calibrationHandler, socket, resolution);
     quality.qualityData = data;  // optional constructed from value
     return quality;
 }
@@ -322,7 +337,7 @@ DynamicCalibration::ErrorCode DynamicCalibration::runQualityCheck(const bool for
         return DynamicCalibration::ErrorCode::QUALITY_CHECK_FAILED;
     }
 
-    auto result = std::make_shared<CalibrationQuality>(calibQualityfromDCL(dclResult.value));
+    auto result = std::make_shared<CalibrationQuality>(calibQualityfromDCL(dclResult.value, calibrationHandler, daiSocketA, resolutionA));
     result->info = dclResult.errorMessage();
     logger->trace("Quality check passed.");
 
@@ -356,8 +371,10 @@ DynamicCalibration::ErrorCode DynamicCalibration::runCalibration(const dai::Cali
     qualityData.rotationChange[1] = dclResult.value.calibrationDifference->rotationChange[1];
     qualityData.rotationChange[2] = dclResult.value.calibrationDifference->rotationChange[2];
     qualityData.depthErrorDifference = dclResult.value.calibrationDifference->depthDistanceDifference;
-    qualityData.sampsonErrorCurrent  = dclResult.value.calibrationDifference->sampsonErrorCurrent;
-    qualityData.sampsonErrorNew = dclResult.value.calibrationDifference->sampsonErrorNew;
+    qualityData.sampsonErrorCurrent =
+        sampsonErrorToPixels(dclResult.value.calibrationDifference->sampsonErrorCurrent, currentHandler, daiSocketA, resolutionA);
+    qualityData.sampsonErrorNew =
+        sampsonErrorToPixels(dclResult.value.calibrationDifference->sampsonErrorNew, currentHandler, daiSocketA, resolutionA);
 
     DynamicCalibrationResult::Data resultData{};
     resultData.newCalibration       = newCalibrationHandler;
