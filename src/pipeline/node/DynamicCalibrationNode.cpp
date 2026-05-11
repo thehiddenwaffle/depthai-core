@@ -269,11 +269,8 @@ float sampsonErrorScalePx(const CalibrationHandler& calibrationHandler, CameraBo
     return 0.5f * (intrinsics.at(0).at(0) + intrinsics.at(1).at(1));
 }
 
-float sampsonErrorToPixels(float sampsonErrorNormalized,
-                           const CalibrationHandler& calibrationHandler,
-                           CameraBoardSocket socket,
-                           const std::pair<int, int>& resolution) {
-    return sampsonErrorNormalized * sampsonErrorScalePx(calibrationHandler, socket, resolution);
+float sampsonErrorToPixels(float sampsonErrorNormalized, float sampsonErrorScalePixels) {
+    return sampsonErrorNormalized * sampsonErrorScalePixels;
 }
 
 dai::CalibrationQuality calibQualityfromDCL(const dcl::CalibrationDifference& src,
@@ -287,8 +284,9 @@ dai::CalibrationQuality calibQualityfromDCL(const dcl::CalibrationDifference& sr
     data.rotationChange[1] = src.rotationChange[1];
     data.rotationChange[2] = src.rotationChange[2];
     data.depthErrorDifference = src.depthDistanceDifference;
-    data.sampsonErrorCurrent = sampsonErrorToPixels(src.sampsonErrorCurrent, calibrationHandler, socket, resolution);
-    data.sampsonErrorNew = sampsonErrorToPixels(src.sampsonErrorNew, calibrationHandler, socket, resolution);
+    const auto sampsonErrorScalePixels = sampsonErrorScalePx(calibrationHandler, socket, resolution);
+    data.sampsonErrorCurrent = sampsonErrorToPixels(src.sampsonErrorCurrent, sampsonErrorScalePixels);
+    data.sampsonErrorNew = sampsonErrorToPixels(src.sampsonErrorNew, sampsonErrorScalePixels);
     quality.qualityData = data;  // optional constructed from value
     return quality;
 }
@@ -371,10 +369,11 @@ DynamicCalibration::ErrorCode DynamicCalibration::runCalibration(const dai::Cali
     qualityData.rotationChange[1] = dclResult.value.calibrationDifference->rotationChange[1];
     qualityData.rotationChange[2] = dclResult.value.calibrationDifference->rotationChange[2];
     qualityData.depthErrorDifference = dclResult.value.calibrationDifference->depthDistanceDifference;
+    const auto sampsonErrorScalePixels = sampsonErrorScalePx(currentHandler, daiSocketA, resolutionA);
     qualityData.sampsonErrorCurrent =
-        sampsonErrorToPixels(dclResult.value.calibrationDifference->sampsonErrorCurrent, currentHandler, daiSocketA, resolutionA);
+        sampsonErrorToPixels(dclResult.value.calibrationDifference->sampsonErrorCurrent, sampsonErrorScalePixels);
     qualityData.sampsonErrorNew =
-        sampsonErrorToPixels(dclResult.value.calibrationDifference->sampsonErrorNew, currentHandler, daiSocketA, resolutionA);
+        sampsonErrorToPixels(dclResult.value.calibrationDifference->sampsonErrorNew, sampsonErrorScalePixels);
 
     DynamicCalibrationResult::Data resultData{};
     resultData.newCalibration       = newCalibrationHandler;
