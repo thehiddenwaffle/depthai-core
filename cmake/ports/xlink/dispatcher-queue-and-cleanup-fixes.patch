@@ -1,0 +1,103 @@
+diff --git a/src/shared/XLinkDispatcher.c b/src/shared/XLinkDispatcher.c
+index 7d74588..f2f8d2a 100644
+--- a/src/shared/XLinkDispatcher.c
++++ b/src/shared/XLinkDispatcher.c
+@@ -965,10 +965,23 @@ static xLinkEventPriv_t* searchForReadyEvent(xLinkSchedulerState_t* curr)
+ 
+ static xLinkEventPriv_t* getNextQueueElemToProc(eventQueueHandler_t *q ){
+     xLinkEventPriv_t* event = NULL;
+-    if (q->cur != q->curProc) {
+-        event = getNextElementWithState(q->base, q->end, q->curProc, EVENT_ALLOCATED);
++    XLINK_RET_ERR_IF(q == NULL, NULL);
++
++    /*
++     * q->cur == q->curProc does NOT imply "no allocated work".
++     *
++     * Inserts search for the next EVENT_SERVED slot starting at q->cur and may wrap
++     * around the ring. If the next reusable slot is immediately before q->curProc,
++     * q->cur wraps back to q->curProc after the insert even though a newly inserted
++     * EVENT_ALLOCATED is now present in the queue.
++     *
++     * Therefore the correct way to find work is to always scan for EVENT_ALLOCATED
++     * starting from q->curProc, regardless of pointer equality.
++     */
++    event = getNextElementWithState(q->base, q->end, q->curProc, EVENT_ALLOCATED);
++    if (event != NULL) {
+         q->curProc = event;
+         CIRCULAR_INCREMENT_BASE(q->curProc, q->end, q->base);
+     }
+     return event;
+ }
+@@ -1066,6 +1079,17 @@ static int dispatcherClean(xLinkSchedulerState_t* curr)
+ 
+     mvLog(MVLOG_INFO, "Start Clean Dispatcher...");
+ 
++    /*
++     * Mark cleanup in progress before waking the scheduler thread.
++     *
++     * sendEvents() uses resetXLink to decide whether a NULL from
++     * dispatcherGetNextEvent() means intentional shutdown or an empty/blocked
++     * queue wakeup. Without setting this early, cleanup can race with the
++     * scheduler and make it exit through the generic NULL-event path while the
++     * reader thread is still blocked in recv().
++     */
++    curr->resetXLink = 1;
++
+     if (XLink_sem_post(&curr->notifyDispatcherSem)) {
+         mvLog(MVLOG_ERROR,"can't post semaphore\n"); //to allow us to get a NULL event
+     }
+@@ -1086,7 +1110,6 @@ static int dispatcherClean(xLinkSchedulerState_t* curr)
+     dispatcherFreeEvents(&curr->lQueue, EVENT_BLOCKED);
+ 
+     curr->schedulerId = -1;
+-    curr->resetXLink = 1;
+     XLink_sem_destroy(&curr->addEventSem);
+     XLink_sem_destroy(&curr->notifyDispatcherSem);
+     localSem_t* temp = curr->eventSemaphores;
+@@ -1182,8 +1205,20 @@ static XLinkError_t sendEvents(xLinkSchedulerState_t* curr) {
+     while (!curr->resetXLink) {
+         event = dispatcherGetNextEvent(curr);
+         if(event == NULL) {
+-            mvLog(MVLOG_ERROR,"Dispatcher received NULL event!");
+-            break; // Means that user reset XLink.
++            /*
++             * NULL does not necessarily mean reset/cleanup. It can also happen
++             * when the scheduler is woken for a blocked request path and there
++             * is currently no READY or ALLOCATED event to process.
++             *
++             * Only exit if cleanup/reset is actually in progress. Otherwise,
++             * keep waiting for a future unblock/response.
++             */
++            if(curr->resetXLink || curr->schedulerId == -1) {
++                mvLog(MVLOG_DEBUG,"Dispatcher received NULL event during reset/cleanup");
++                break;
++            }
++            mvLog(MVLOG_WARN,"Dispatcher received NULL event without reset/cleanup; continuing to wait");
++            continue;
+         }
+         
+         if(event->packet.deviceHandle.xLinkFD
+diff --git a/src/shared/XLinkData.c b/src/shared/XLinkData.c
+index 1131622..6f111f6 100644
+--- a/src/shared/XLinkData.c
++++ b/src/shared/XLinkData.c
+@@ -644,6 +644,18 @@ XLinkError_t addEventTimeout(xLinkEvent_t *event, struct timespec abstime)
+     }
+ 
+     if (DispatcherWaitEventCompleteTimeout(&event->deviceHandle, abstime)) {
++        if(event->header.type == XLINK_READ_REQ) {
++            streamDesc_t* stream = getStreamById(event->deviceHandle.xLinkFD,
++                                                 event->header.streamId);
++            if(stream != NULL) {
++                /*
++                 * Timed local reads can block in the dispatcher if no packet is available.
++                 * On timeout, explicitly serve the blocked request so the queue slot is
++                 * reclaimed. This mirrors the cleanup logic already present in addEvent_().
++                 */
++                DispatcherServeEvent(event->header.id, XLINK_READ_REQ, stream->id, event->deviceHandle.xLinkFD);
++                releaseStream(stream);
++            }
++        }
+         return X_LINK_TIMEOUT;
+     }
+ 

@@ -6,6 +6,7 @@ vcpkg_from_github(
     HEAD_REF develop_server
     PATCHES
         no-hunter.patch
+        dispatcher-queue-and-cleanup-fixes.patch
 )
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     FEATURES
