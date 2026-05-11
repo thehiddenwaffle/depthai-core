@@ -22,18 +22,18 @@ bool areLensesWide(std::shared_ptr<Device> device) {
     size_t start = 0;
 
     while(start < hardwareConf.size()) {
-      const size_t end = hardwareConf.find('-', start);
-      const std::string token = hardwareConf.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        const size_t end = hardwareConf.find('-', start);
+        const std::string token = hardwareConf.substr(start, end == std::string::npos ? std::string::npos : end - start);
 
-      if(token == "FV01" || token == "FV05") {
-         return true;
-      }
-      if(token.rfind("FV", 0) == 0) {
-         return false;
-      }
+        if(token == "FV01" || token == "FV05") {
+            return true;
+        }
+        if(token.rfind("FV", 0) == 0) {
+            return false;
+        }
 
-      if(end == std::string::npos) break;
-      start = end + 1;
+        if(end == std::string::npos) break;
+        start = end + 1;
     }
     return false;
 }
