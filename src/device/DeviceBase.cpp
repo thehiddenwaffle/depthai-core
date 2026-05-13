@@ -599,16 +599,17 @@ std::string DeviceBase::fetchAnonymousAnalyticsId() {
 }
 
 void DeviceBase::analyticsEventLoop() {
-    using namespace std::chrono_literals;
-
     while(analyticsEventRunning) {
         try {
-            XLinkStream stream(connection, device::XLINK_CHANNEL_ANALYTICS, device::XLINK_USB_BUFFER_MAX_SIZE);
+            auto stream = std::make_shared<XLinkStream>(connection, device::XLINK_CHANNEL_ANALYTICS, device::XLINK_USB_BUFFER_MAX_SIZE);
+            {
+                std::lock_guard<std::mutex> lock(analyticsEventStreamMtx);
+                analyticsEventStream = stream;
+            }
             while(analyticsEventRunning) {
                 std::vector<std::uint8_t> data;
-                if(!stream.read(data, 500ms)) {
-                    continue;
-                }
+                stream->read(data);
+                if(!analyticsEventRunning) break;
 
                 try {
                     auto payload = nlohmann::json::parse(data.begin(), data.end());
@@ -626,10 +627,17 @@ void DeviceBase::analyticsEventLoop() {
                     pimpl->logger.debug("Failed to parse analytics event from device: {}", ex.what());
                 }
             }
+            {
+                std::lock_guard<std::mutex> lock(analyticsEventStreamMtx);
+                if(analyticsEventStream == stream) analyticsEventStream.reset();
+            }
         } catch(const std::exception& ex) {
+            {
+                std::lock_guard<std::mutex> lock(analyticsEventStreamMtx);
+                analyticsEventStream.reset();
+            }
             if(analyticsEventRunning) {
                 pimpl->logger.debug("Analytics event thread exception caught: {}", ex.what());
-                std::this_thread::sleep_for(500ms);
             }
         }
     }
@@ -673,6 +681,10 @@ void DeviceBase::stopAnalyticsLifecycle() {
     }
 
     analyticsEventRunning = false;
+    {
+        std::lock_guard<std::mutex> lock(analyticsEventStreamMtx);
+        if(analyticsEventStream) analyticsEventStream->close();
+    }
     if(analyticsEventThread.joinable()) {
         analyticsEventThread.join();
     }

@@ -1121,6 +1121,8 @@ class DeviceBase {
     // Analytics
     std::thread analyticsEventThread;
     std::atomic<bool> analyticsEventRunning{false};
+    std::mutex analyticsEventStreamMtx;
+    std::shared_ptr<XLinkStream> analyticsEventStream;
     std::thread analyticsPingThread;
     std::atomic<bool> analyticsPingRunning{false};
     std::condition_variable analyticsPingCondVar;
