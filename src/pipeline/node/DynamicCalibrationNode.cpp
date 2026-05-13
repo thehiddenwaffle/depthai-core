@@ -161,9 +161,7 @@ void DclUtils::convertDclCalibrationToDai(CalibrationHandler& calibHandler,
                                           const std::shared_ptr<const dcl::CameraCalibrationHandle>& dclCalibrationA,
                                           const std::shared_ptr<const dcl::CameraCalibrationHandle>& dclCalibrationB,
                                           const CameraBoardSocket socketSrc,
-                                          const CameraBoardSocket socketDest,
-                                          const std::pair<int, int>& resolutionA,
-                                          const std::pair<int, int>& resolutionB) {
+                                          const CameraBoardSocket socketDest) {
     // Get extrinsics for both cameras (T_left_to_origin and T_right_to_origin)
     dcl::scalar_t tvecA[3];
     dclCalibrationA->getTvec(tvecA);
@@ -203,40 +201,10 @@ void DclUtils::convertDclCalibrationToDai(CalibrationHandler& calibHandler,
         }
         translation[i] = (static_cast<float>(tvecB[i]) - rotationMatrixDotTranslationA) * 100.0f;  // meters to cm
     }
-
-    dcl::distortion_t distortionA;
-    dclCalibrationA->getDistortion(distortionA);
-
-    dcl::scalar_t cameraMatrixA[9];
-    dclCalibrationA->getCameraMatrix(cameraMatrixA);
-    // clang-format off
-    std::vector<std::vector<float>> matA = {
-        {static_cast<float>(cameraMatrixA[0]), static_cast<float>(cameraMatrixA[1]), static_cast<float>(cameraMatrixA[2])},
-        {static_cast<float>(cameraMatrixA[3]), static_cast<float>(cameraMatrixA[4]), static_cast<float>(cameraMatrixA[5])},
-        {static_cast<float>(cameraMatrixA[6]), static_cast<float>(cameraMatrixA[7]), static_cast<float>(cameraMatrixA[8])}
-    };
-    // clang-format on
-
-    dcl::distortion_t distortionB;
-    dclCalibrationB->getDistortion(distortionB);
-
-    dcl::scalar_t cameraMatrixB[9];
-    dclCalibrationB->getCameraMatrix(cameraMatrixB);
-    // clang-format off
-    std::vector<std::vector<float>> matB = {
-        {static_cast<float>(cameraMatrixB[0]), static_cast<float>(cameraMatrixB[1]), static_cast<float>(cameraMatrixB[2])},
-        {static_cast<float>(cameraMatrixB[3]), static_cast<float>(cameraMatrixB[4]), static_cast<float>(cameraMatrixB[5])},
-        {static_cast<float>(cameraMatrixB[6]), static_cast<float>(cameraMatrixB[7]), static_cast<float>(cameraMatrixB[8])}
-    };
-    // clang-format on
-
-    calibHandler.setCameraIntrinsics(socketSrc, matA, resolutionA.first, resolutionA.second);
-    calibHandler.setCameraIntrinsics(socketDest, matB, resolutionB.first, resolutionB.second);
-    calibHandler.setDistortionCoefficients(socketSrc, distortionToVector(distortionA));
-    calibHandler.setDistortionCoefficients(socketDest, distortionToVector(distortionB));
     auto specTranslation = calibHandler.getCameraTranslationVector(socketSrc, socketDest, true);
     calibHandler.setCameraExtrinsics(socketSrc, socketDest, rotationMatrix, translation, specTranslation);
 }
+
 #ifdef DEPTHAI_HAVE_OPENCV_SUPPORT
 dcl::ImageData DclUtils::cvMatToImageData(const cv::Mat& mat) {
     if(mat.empty()) {
@@ -362,7 +330,7 @@ DynamicCalibration::ErrorCode DynamicCalibration::runCalibration(const dai::Cali
     auto newCalibrationHandler = currentHandler;
 
     dai::node::DclUtils::convertDclCalibrationToDai(
-	newCalibrationHandler, dclCalibrationA, dclCalibrationB, daiSocketA, daiSocketB, resolutionA, resolutionB);
+	newCalibrationHandler, dclCalibrationA, dclCalibrationB, daiSocketA, daiSocketB);
 
     CalibrationQuality::Data qualityData{};
     qualityData.rotationChange[0] = dclResult.value.calibrationDifference->rotationChange[0];
