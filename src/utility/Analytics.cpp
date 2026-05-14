@@ -24,7 +24,6 @@
 
 #include "build/version.hpp"
 #include "utility/Logging.hpp"
-#include "utility/Platform.hpp"
 
 #if defined(TARGET_DEVICE_RVC4)
     #include <XLink/XLink.h>
@@ -51,7 +50,7 @@ constexpr std::chrono::seconds RETRY_DELAY{5};
 constexpr std::chrono::seconds MAX_RETRY_DELAY{30};
 constexpr char DEFAULT_POSTHOG_HOST[] = "https://eu.i.posthog.com";
 constexpr char DEFAULT_POSTHOG_API_KEY[] = "phc_navwoWmBZEUeN5UH2sFBbQJSJw6DwEUkFa8QTq9W4Mji";
-constexpr char DEFAULT_TELEMETRY_QUEUE_DIR[] = "telemetry_queue";
+constexpr char DEFAULT_TELEMETRY_ROOT_DIR[] = "telemetry";
 
 std::string readEnv(const char* name) {
     const char* value = std::getenv(name);
@@ -102,8 +101,8 @@ bool analyticsEnabledByDefault() {
     return !(value == "0" || value == "false" || value == "off");
 }
 
-std::filesystem::path defaultQueueDir() {
-    return dai::platform::getTempPath() / DEFAULT_TELEMETRY_QUEUE_DIR;
+std::filesystem::path defaultTelemetryBaseDir() {
+    return std::filesystem::current_path() / ".cache" / "depthai" / DEFAULT_TELEMETRY_ROOT_DIR;
 }
 
 std::string generateUuidV4() {
@@ -283,6 +282,7 @@ struct AnalyticsSharedState {
     void loadQueueFromDisk();
     void workerLoop();
     void flushOneBatch();
+    void cleanupRunDirectory();
     void removeFileFromQueueLocked(const std::string& filename);
     void deleteFilesLocked(const std::vector<std::string>& filenames);
     void deleteFileOnDisk(const std::string& filename);
@@ -301,11 +301,10 @@ class Analytics::Impl {
 };
 
 AnalyticsSharedState::AnalyticsSharedState() {
-    queueDir = defaultQueueDir();
-
     captureUrl = normalizeCaptureUrl(readEnv("DEPTHAI_TELEMETRY_URL"));
     apiKey = DEFAULT_POSTHOG_API_KEY;
     distinctId = sessionKey;
+    queueDir = defaultTelemetryBaseDir() / sessionKey;
 
     try {
         std::filesystem::create_directories(queueDir);
@@ -339,6 +338,8 @@ AnalyticsSharedState::~AnalyticsSharedState() {
     if(worker.joinable()) {
         worker.join();
     }
+
+    cleanupRunDirectory();
 }
 
 void AnalyticsSharedState::event(std::string eventName, nlohmann::json properties) {
@@ -621,6 +622,21 @@ void AnalyticsSharedState::deleteFileOnDisk(const std::string& filename) {
     std::filesystem::remove(queueDir / filename, ec);
     if(ec) {
         logger::debug("Failed to delete analytics queue file '{}': {}", filename, ec.message());
+    }
+}
+
+void AnalyticsSharedState::cleanupRunDirectory() {
+    std::error_code ec;
+    std::filesystem::remove_all(queueDir, ec);
+    if(ec) {
+        logger::debug("Failed to delete analytics run directory '{}': {}", queueDir.string(), ec.message());
+        return;
+    }
+
+    const auto telemetryRoot = queueDir.parent_path();
+    std::filesystem::remove(telemetryRoot, ec);
+    if(ec) {
+        logger::debug("Failed to delete analytics telemetry root '{}': {}", telemetryRoot.string(), ec.message());
     }
 }
 
