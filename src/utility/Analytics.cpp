@@ -24,6 +24,7 @@
 
 #include "build/version.hpp"
 #include "utility/Logging.hpp"
+#include "utility/Platform.hpp"
 
 #if defined(TARGET_DEVICE_RVC4)
     #include <XLink/XLink.h>
@@ -50,6 +51,7 @@ constexpr std::chrono::seconds RETRY_DELAY{5};
 constexpr std::chrono::seconds MAX_RETRY_DELAY{30};
 constexpr char DEFAULT_POSTHOG_HOST[] = "https://eu.i.posthog.com";
 constexpr char DEFAULT_POSTHOG_API_KEY[] = "phc_navwoWmBZEUeN5UH2sFBbQJSJw6DwEUkFa8QTq9W4Mji";
+constexpr char DEFAULT_TELEMETRY_QUEUE_DIR[] = "telemetry_queue";
 
 std::string readEnv(const char* name) {
     const char* value = std::getenv(name);
@@ -63,6 +65,33 @@ std::string trim(std::string value) {
     return value;
 }
 
+std::string defaultCaptureUrl() {
+    return std::string(DEFAULT_POSTHOG_HOST) + "/capture/";
+}
+
+std::string normalizeCaptureUrl(std::string url) {
+    url = trim(std::move(url));
+    if(url.empty()) {
+        return defaultCaptureUrl();
+    }
+
+    const auto schemePos = url.find("://");
+    const auto pathPos = schemePos == std::string::npos ? url.find('/') : url.find('/', schemePos + 3);
+    if(pathPos == std::string::npos) {
+        return url + "/capture/";
+    }
+
+    const auto path = url.substr(pathPos);
+    if(path.empty() || path == "/") {
+        if(url.back() == '/') {
+            return url + "capture/";
+        }
+        return url + "/capture/";
+    }
+
+    return url;
+}
+
 bool analyticsEnabledByDefault() {
     auto value = trim(readEnv("DEPTHAI_ANALYTICS"));
     if(value.empty()) {
@@ -73,35 +102,8 @@ bool analyticsEnabledByDefault() {
     return !(value == "0" || value == "false" || value == "off");
 }
 
-std::filesystem::path homeDirectory() {
-    auto home = readEnv("HOME");
-    if(!home.empty()) {
-        return home;
-    }
-
-#ifdef _WIN32
-    home = readEnv("USERPROFILE");
-    if(!home.empty()) {
-        return home;
-    }
-
-    const auto drive = readEnv("HOMEDRIVE");
-    const auto path = readEnv("HOMEPATH");
-    if(!drive.empty() && !path.empty()) {
-        return drive + path;
-    }
-#endif
-
-    std::error_code ec;
-    const auto tempDir = std::filesystem::temp_directory_path(ec);
-    if(!ec) {
-        return tempDir;
-    }
-    return std::filesystem::current_path();
-}
-
-std::filesystem::path defaultStorageDir() {
-    return homeDirectory() / ".depthai" / "posthog";
+std::filesystem::path defaultQueueDir() {
+    return dai::platform::getTempPath() / DEFAULT_TELEMETRY_QUEUE_DIR;
 }
 
 std::string generateUuidV4() {
@@ -253,7 +255,7 @@ class Analytics::Impl {
 struct AnalyticsSharedState {
     bool enabled{false};
     std::string apiKey;
-    std::string host;
+    std::string captureUrl;
     std::string distinctId;
     std::string sessionKey{generateUuidV7()};
 
@@ -299,10 +301,9 @@ class Analytics::Impl {
 };
 
 AnalyticsSharedState::AnalyticsSharedState() {
-    const auto storageDir = defaultStorageDir();
-    queueDir = storageDir / "queue";
+    queueDir = defaultQueueDir();
 
-    host = DEFAULT_POSTHOG_HOST;
+    captureUrl = normalizeCaptureUrl(readEnv("DEPTHAI_TELEMETRY_URL"));
     apiKey = DEFAULT_POSTHOG_API_KEY;
     distinctId = sessionKey;
 
@@ -556,7 +557,7 @@ void AnalyticsSharedState::flushOneBatch() {
                 requestBody["timestamp"] = queuedEvent["timestamp"];
             }
 
-            auto response = cpr::Post(cpr::Url{host + "/capture/"},
+            auto response = cpr::Post(cpr::Url{captureUrl},
                                       cpr::Body{requestBody.dump()},
                                       cpr::Header{{"Content-Type", "application/json"}, {"User-Agent", std::string("depthai-core/") + build::VERSION}},
                                       cpr::Timeout{10000},
