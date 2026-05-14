@@ -224,7 +224,7 @@ std::vector<ReceivedRequest> runTelemetryScenario() {
                            subprocess::environment{std::move(childEnv)},
                            subprocess::session_leader{true});
 
-    const std::set<std::string> requiredEvents = {"device_constructor", "pipeline_start", "pipeline_stop"};
+    const std::set<std::string> requiredEvents = {"depthai_load", "device_constructor", "pipeline_start", "pipeline_stop"};
     const bool waitedForEvents = server.waitForRequiredEvents(requiredEvents, kRequestTimeout);
     const auto requests = server.snapshot();
     const bool listenFailed = server.hadListenFailure();
@@ -273,10 +273,10 @@ std::vector<ReceivedRequest> runTelemetryScenario() {
 
 void validateRequests(const std::vector<ReceivedRequest>& requests) {
     CAPTURE(requests.size());
-    REQUIRE(requests.size() >= 3);
+    REQUIRE(requests.size() >= 4);
 
     std::map<std::string, int> counts;
-    const std::set<std::string> allowedEvents = {"device_constructor", "pipeline_start", "pipeline_stop", "device_destructor", "ping"};
+    const std::set<std::string> allowedEvents = {"depthai_load", "device_constructor", "pipeline_start", "pipeline_stop", "device_destructor", "ping"};
 
     for(const auto& request : requests) {
         expectCommonEventShape(request);
@@ -288,11 +288,24 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         counts[eventName] += 1;
     }
 
+    const auto& depthaiLoad = getSingleEventRequest(requests, "depthai_load");
     const auto& deviceConstructor = getSingleEventRequest(requests, "device_constructor");
     const auto& pipelineStart = getSingleEventRequest(requests, "pipeline_start");
     const auto& pipelineStop = getSingleEventRequest(requests, "pipeline_stop");
+    const auto depthaiLoadProperties = depthaiLoad.body["properties"];
+    REQUIRE_FALSE(depthaiLoadProperties.value("host_id", std::string{}).empty());
+    REQUIRE_FALSE(depthaiLoadProperties.value("session_id", std::string{}).empty());
+    REQUIRE((depthaiLoadProperties.value("host_os", std::string{}) == "windows" || depthaiLoadProperties.value("host_os", std::string{}) == "linux"
+             || depthaiLoadProperties.value("host_os", std::string{}) == "mac" || depthaiLoadProperties.value("host_os", std::string{}) == "oakapp"));
+    REQUIRE_FALSE(depthaiLoadProperties.value("host_os_version", std::string{}).empty());
     const auto deviceConstructorProperties = deviceConstructor.body["properties"];
+    REQUIRE_FALSE(deviceConstructorProperties.value("host_id", std::string{}).empty());
+    REQUIRE_FALSE(deviceConstructorProperties.value("session_id", std::string{}).empty());
     REQUIRE_FALSE(deviceConstructorProperties.value("device_id", std::string{}).empty());
+    REQUIRE_FALSE(deviceConstructorProperties.value("device_model", std::string{}).empty());
+    REQUIRE_FALSE(deviceConstructorProperties.value("platform", std::string{}).empty());
+    REQUIRE((deviceConstructorProperties.value("protocol", std::string{}) == "usb" || deviceConstructorProperties.value("protocol", std::string{}) == "ethernet"));
+    REQUIRE_FALSE(deviceConstructorProperties.value("protocol_speed", std::string{}).empty());
 
     const auto pipelineStartProperties = pipelineStart.body["properties"];
     REQUIRE(pipelineStartProperties.contains("host_only"));
@@ -312,9 +325,11 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     expectIntegerProperty(pipelineStopProperties, "bridge_count");
     expectIntegerProperty(pipelineStopProperties, "duration_ms");
 
+    CAPTURE(counts["depthai_load"]);
     CAPTURE(counts["device_constructor"]);
     CAPTURE(counts["pipeline_start"]);
     CAPTURE(counts["pipeline_stop"]);
+    REQUIRE(counts["depthai_load"] == 1);
     REQUIRE(counts["device_constructor"] == 1);
     REQUIRE(counts["pipeline_start"] == 1);
     REQUIRE(counts["pipeline_stop"] == 1);

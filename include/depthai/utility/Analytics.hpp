@@ -36,5 +36,11 @@ class Analytics {
     std::unique_ptr<Impl> impl;
 };
 
+std::string getTemporaryHostId();
+std::string getTemporaryDeviceId(const std::string& mxid);
+std::string getAnalyticsHostOS();
+std::string getAnalyticsHostOSVersion();
+void emitDepthaiLoadEvent();
+
 }  // namespace utility
 }  // namespace dai

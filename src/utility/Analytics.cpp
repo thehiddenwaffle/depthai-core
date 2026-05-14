@@ -24,6 +24,7 @@
 
 #include "build/version.hpp"
 #include "utility/Logging.hpp"
+#include "utility/Platform.hpp"
 
 #if defined(TARGET_DEVICE_RVC4)
     #include <XLink/XLink.h>
@@ -51,6 +52,8 @@ constexpr std::chrono::seconds MAX_RETRY_DELAY{30};
 constexpr char DEFAULT_POSTHOG_HOST[] = "https://eu.i.posthog.com";
 constexpr char DEFAULT_POSTHOG_API_KEY[] = "phc_navwoWmBZEUeN5UH2sFBbQJSJw6DwEUkFa8QTq9W4Mji";
 constexpr char DEFAULT_TELEMETRY_ROOT_DIR[] = "telemetry";
+constexpr char TMP_IDS_FILENAME[] = "tmpIds.json";
+constexpr auto TMP_ID_TTL = std::chrono::hours(24);
 
 std::string readEnv(const char* name) {
     const char* value = std::getenv(name);
@@ -99,6 +102,11 @@ bool analyticsEnabledByDefault() {
 
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
     return !(value == "0" || value == "false" || value == "off");
+}
+
+std::string lowercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return value;
 }
 
 std::filesystem::path defaultTelemetryBaseDir() {
@@ -181,6 +189,196 @@ std::string makeQueueFilename() {
     std::ostringstream stream;
     stream << std::setw(20) << std::setfill('0') << timestampMs << '_' << generateUuidV4() << ".json";
     return stream.str();
+}
+
+int64_t nowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
+}
+
+struct TemporaryIdEntry {
+    std::string id;
+    int64_t expiresAtMs = 0;
+};
+
+struct TemporaryDeviceIdEntry {
+    std::string mxid;
+    std::string tmpDeviceId;
+    int64_t expiresAtMs = 0;
+};
+
+struct TemporaryIdsDocument {
+    TemporaryIdEntry host;
+    std::vector<TemporaryDeviceIdEntry> devices;
+};
+
+bool isExpired(const TemporaryIdEntry& entry, int64_t currentMs) {
+    return entry.id.empty() || entry.expiresAtMs <= currentMs;
+}
+
+bool isExpired(const TemporaryDeviceIdEntry& entry, int64_t currentMs) {
+    return entry.tmpDeviceId.empty() || entry.expiresAtMs <= currentMs;
+}
+
+std::string getAnalyticsHostOSImpl() {
+    if(!readEnv("OAKAGENT_APP_ID").empty() || !readEnv("OAKAGENT_APP_IDENTIFIER").empty()) {
+        return "oakapp";
+    }
+
+    const auto platformName = dai::platform::getOSPlatform();
+    if(platformName == "Windows") return "windows";
+    if(platformName == "Linux") return "linux";
+    if(platformName == "MacOS") return "mac";
+    return lowercase(platformName);
+}
+
+std::filesystem::path tmpIdsPath() {
+    return defaultTelemetryBaseDir() / TMP_IDS_FILENAME;
+}
+
+TemporaryIdsDocument readTemporaryIdsDocument(const std::filesystem::path& path) {
+    TemporaryIdsDocument document;
+
+    std::ifstream input(path);
+    if(!input.good()) {
+        return document;
+    }
+
+    nlohmann::json json;
+    try {
+        input >> json;
+    } catch(const std::exception&) {
+        return document;
+    }
+
+    if(json.contains("tmp_host_id") && json["tmp_host_id"].is_object()) {
+        const auto& host = json["tmp_host_id"];
+        document.host.id = host.value("value", std::string{});
+        document.host.expiresAtMs = host.value("expires_at_ms", int64_t{0});
+    }
+
+    if(json.contains("tmp_device_ids") && json["tmp_device_ids"].is_array()) {
+        for(const auto& item : json["tmp_device_ids"]) {
+            if(!item.is_object()) continue;
+            TemporaryDeviceIdEntry entry;
+            entry.mxid = item.value("mxid", std::string{});
+            entry.tmpDeviceId = item.value("tmp_device_id", std::string{});
+            entry.expiresAtMs = item.value("expires_at_ms", int64_t{0});
+            if(!entry.mxid.empty()) {
+                document.devices.push_back(std::move(entry));
+            }
+        }
+    }
+
+    return document;
+}
+
+nlohmann::json writeTemporaryIdsDocument(const TemporaryIdsDocument& document) {
+    nlohmann::json json = nlohmann::json::object();
+    json["tmp_host_id"] = {
+        {"value", document.host.id},
+        {"expires_at_ms", document.host.expiresAtMs},
+    };
+
+    json["tmp_device_ids"] = nlohmann::json::array();
+    for(const auto& entry : document.devices) {
+        json["tmp_device_ids"].push_back({
+            {"mxid", entry.mxid},
+            {"tmp_device_id", entry.tmpDeviceId},
+            {"expires_at_ms", entry.expiresAtMs},
+        });
+    }
+
+    return json;
+}
+
+void persistTemporaryIdsDocument(const std::filesystem::path& path, const TemporaryIdsDocument& document) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if(!output.good()) {
+        throw std::runtime_error("Failed to open tmpIds file for writing");
+    }
+
+    output << writeTemporaryIdsDocument(document).dump(2);
+    if(!output.good()) {
+        throw std::runtime_error("Failed to write tmpIds file");
+    }
+}
+
+class TemporaryIdsManager {
+   public:
+    std::string getHostId() {
+        std::lock_guard<std::mutex> guard(mutex);
+        const auto currentMs = nowMs();
+        auto fileLock = acquireLock();
+        (void)fileLock;
+        bool changed = false;
+        auto document = loadLocked(currentMs, changed);
+        if(isExpired(document.host, currentMs)) {
+            document.host.id = generateUuidV7();
+            document.host.expiresAtMs = currentMs + std::chrono::duration_cast<std::chrono::milliseconds>(TMP_ID_TTL).count();
+            changed = true;
+        }
+        if(changed) saveLocked(document);
+        return document.host.id;
+    }
+
+    std::string getDeviceId(const std::string& mxid) {
+        std::lock_guard<std::mutex> guard(mutex);
+        const auto currentMs = nowMs();
+        auto fileLock = acquireLock();
+        (void)fileLock;
+        bool changed = false;
+        auto document = loadLocked(currentMs, changed);
+
+        auto it = std::find_if(document.devices.begin(), document.devices.end(), [&](const TemporaryDeviceIdEntry& entry) { return entry.mxid == mxid; });
+        if(it == document.devices.end()) {
+            TemporaryDeviceIdEntry entry;
+            entry.mxid = mxid;
+            entry.tmpDeviceId = generateUuidV7();
+            entry.expiresAtMs = currentMs + std::chrono::duration_cast<std::chrono::milliseconds>(TMP_ID_TTL).count();
+            const auto tmpDeviceId = entry.tmpDeviceId;
+            document.devices.push_back(entry);
+            changed = true;
+            if(changed) saveLocked(document);
+            return tmpDeviceId;
+        }
+
+        if(isExpired(*it, currentMs)) {
+            it->tmpDeviceId = generateUuidV7();
+            it->expiresAtMs = currentMs + std::chrono::duration_cast<std::chrono::milliseconds>(TMP_ID_TTL).count();
+            changed = true;
+        }
+
+        if(changed) saveLocked(document);
+        return it->tmpDeviceId;
+    }
+
+   private:
+    std::unique_ptr<dai::platform::FileLock> acquireLock() {
+        std::filesystem::create_directories(defaultTelemetryBaseDir());
+        return dai::platform::FileLock::lock(tmpIdsPath(), true);
+    }
+
+    TemporaryIdsDocument loadLocked(int64_t currentMs, bool& changed) {
+        auto document = readTemporaryIdsDocument(tmpIdsPath());
+        const auto originalSize = document.devices.size();
+        document.devices.erase(std::remove_if(document.devices.begin(),
+                                              document.devices.end(),
+                                              [&](const TemporaryDeviceIdEntry& entry) { return entry.mxid.empty() || isExpired(entry, currentMs); }),
+                               document.devices.end());
+        changed = changed || document.devices.size() != originalSize;
+        return document;
+    }
+
+    void saveLocked(const TemporaryIdsDocument& document) {
+        persistTemporaryIdsDocument(tmpIdsPath(), document);
+    }
+
+    std::mutex mutex;
+};
+
+TemporaryIdsManager& temporaryIdsManager() {
+    static TemporaryIdsManager manager;
+    return manager;
 }
 
 }  // namespace
@@ -630,13 +828,6 @@ void AnalyticsSharedState::cleanupRunDirectory() {
     std::filesystem::remove_all(queueDir, ec);
     if(ec) {
         logger::debug("Failed to delete analytics run directory '{}': {}", queueDir.string(), ec.message());
-        return;
-    }
-
-    const auto telemetryRoot = queueDir.parent_path();
-    std::filesystem::remove(telemetryRoot, ec);
-    if(ec) {
-        logger::debug("Failed to delete analytics telemetry root '{}': {}", telemetryRoot.string(), ec.message());
     }
 }
 
@@ -645,6 +836,37 @@ void AnalyticsSharedState::cleanupRunDirectory() {
 Analytics::Analytics() : impl(std::make_unique<Impl>()) {}
 
 Analytics::~Analytics() = default;
+
+std::string getTemporaryHostId() {
+    return temporaryIdsManager().getHostId();
+}
+
+std::string getTemporaryDeviceId(const std::string& mxid) {
+    return temporaryIdsManager().getDeviceId(mxid);
+}
+
+std::string getAnalyticsHostOS() {
+    return getAnalyticsHostOSImpl();
+}
+
+std::string getAnalyticsHostOSVersion() {
+    return dai::platform::getOSVersion();
+}
+
+void emitDepthaiLoadEvent() {
+#if defined(TARGET_DEVICE_RVC4)
+    return;
+#else
+    Analytics analytics;
+    analytics.event("depthai_load",
+                    nlohmann::json{
+                        {"host_id", getTemporaryHostId()},
+                        {"session_id", analyticsSharedState().sessionKey},
+                        {"host_os", getAnalyticsHostOS()},
+                        {"host_os_version", getAnalyticsHostOSVersion()},
+                    });
+#endif
+}
 
 void Analytics::event(std::string eventName, std::map<std::string, std::string> properties) {
     nlohmann::json jsonProperties = nlohmann::json::object();

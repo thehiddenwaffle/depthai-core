@@ -1044,7 +1044,7 @@ class DeviceBase {
     void tryGetDevice();
     void startAnalyticsLifecycle(bool reconnect);
     void stopAnalyticsLifecycle();
-    void emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann::json properties = {}) const;
+    void emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann::json properties = {});
     std::string fetchAnonymousAnalyticsId();
     void analyticsEventLoop();
     void analyticsPingLoop();

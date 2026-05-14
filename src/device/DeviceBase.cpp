@@ -5,6 +5,7 @@
 #include <spdlog/fmt/ostr.h>
 
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <iomanip>
@@ -130,6 +131,49 @@ std::string generateAnalyticsSessionId() {
         }
     }
     return stream.str();
+}
+
+std::string lowercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return value;
+}
+
+std::string analyticsProtocolName(XLinkProtocol_t protocol) {
+    switch(protocol) {
+        case X_LINK_USB_VSC:
+        case X_LINK_USB_CDC:
+        case X_LINK_USB_EP:
+            return "usb";
+        case X_LINK_TCP_IP:
+        case X_LINK_TCP_IP_OR_LOCAL_SHDMEM:
+            return "ethernet";
+        case X_LINK_PCIE:
+        case X_LINK_IPC:
+        case X_LINK_LOCAL_SHDMEM:
+        case X_LINK_ANY_PROTOCOL:
+        case X_LINK_NMB_OF_PROTOCOLS:
+            return "unknown";
+        default:
+            return "unknown";
+    }
+}
+
+std::string analyticsProtocolSpeed(XLinkProtocol_t protocol, dai::UsbSpeed speed) {
+    if(protocol == X_LINK_USB_VSC || protocol == X_LINK_USB_CDC || protocol == X_LINK_USB_EP) {
+        switch(speed) {
+            case dai::UsbSpeed::SUPER:
+            case dai::UsbSpeed::SUPER_PLUS:
+                return "usb3";
+            case dai::UsbSpeed::LOW:
+            case dai::UsbSpeed::FULL:
+            case dai::UsbSpeed::HIGH:
+                return "usb2";
+            case dai::UsbSpeed::UNKNOWN:
+            default:
+                return "unknown";
+        }
+    }
+    return "unknown";
 }
 
 }  // namespace
@@ -547,7 +591,7 @@ void DeviceBase::close() {
     }
 }
 
-void DeviceBase::emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann::json properties) const {
+void DeviceBase::emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann::json properties) {
     if(!isAnalyticsEnabled()) {
         return;
     }
@@ -560,8 +604,16 @@ void DeviceBase::emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann
             properties["__analytics_distinct_id"] = anonymousAnalyticsId;
             properties["anonymous_analytics_id"] = anonymousAnalyticsId;
         }
+        properties["host_id"] = utility::getTemporaryHostId();
+        properties["session_id"] = getAnalyticsSessionId();
         properties["$session_id"] = getAnalyticsSessionId();
-        properties["device_id"] = deviceInfo.getDeviceId();
+        properties["device_id"] = utility::getTemporaryDeviceId(deviceInfo.getDeviceId());
+        if(eventName == "device_constructor") {
+            properties["device_model"] = lowercase(getProductName());
+            properties["platform"] = lowercase(getPlatformAsString());
+            properties["protocol"] = analyticsProtocolName(deviceInfo.protocol);
+            properties["protocol_speed"] = analyticsProtocolSpeed(deviceInfo.protocol, getUsbSpeed());
+        }
         analyticsInstance().event(eventName, std::move(properties));
     } catch(const std::exception& ex) {
         logger::debug("Analytics event '{}' failed: {}", eventName, ex.what());

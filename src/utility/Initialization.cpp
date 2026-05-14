@@ -7,6 +7,7 @@
 
 // project
 #include "build/version.hpp"
+#include "depthai/utility/Analytics.hpp"
 #include "depthai/config/config.hpp"
 #include "utility/Environment.hpp"
 #include "utility/Logging.hpp"
@@ -155,6 +156,8 @@ bool initialize(const char* additionalInfo, bool installSignalHandler, void* jav
         }
 
         logger::debug("Initialize - finished");
+
+        utility::emitDepthaiLoadEvent();
 
         return true;
     }();
