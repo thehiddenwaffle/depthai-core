@@ -1950,9 +1950,20 @@ std::vector<std::uint8_t> DeviceBase::readCcmEepromRaw(CameraBoardSocket socket,
 }
 
 void DeviceBase::writeCcmEepromRaw(CameraBoardSocket socket, std::vector<uint8_t> data, int offset) {
+    bool factoryPermissions = false;
+    bool protectedPermissions = false;
+    getFlashingPermissions(factoryPermissions, protectedPermissions);
+    pimpl->logger.debug(
+        "Writing CCM EEPROM contents on socket {}. Factory permissions {}, Protected permissions {}", socket, factoryPermissions, protectedPermissions);
+
+    if(!protectedPermissions || !factoryPermissions) {
+        throw std::runtime_error("Calling factory API is not allowed in current configuration");
+    }
+
     bool success;
     std::string errorMsg;
-    std::tie(success, errorMsg) = pimpl->rpcCall("writeCcmEepromRaw", socket, data, offset).as<std::tuple<bool, std::string>>();
+    std::tie(success, errorMsg) =
+        pimpl->rpcCall("writeCcmEepromRaw", protectedPermissions, factoryPermissions, socket, data, offset).as<std::tuple<bool, std::string>>();
     if(!success) {
         throw EepromError(errorMsg);
     }

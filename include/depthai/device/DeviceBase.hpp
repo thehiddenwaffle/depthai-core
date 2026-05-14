@@ -979,6 +979,7 @@ class DeviceBase {
     /**
      * Writes the raw EEPROM data from the specified CCM (compact camera module).
      * Note: only certain CCMs (e.g. ToF) do have an EEPROM chip on-module
+     * Requires FACTORY PROTECTED permissions
      *
      * @param socket CameraBoardSocket where the CCM is placed
      * @param data Data buffer to write
