@@ -533,8 +533,16 @@ DeviceBase::DeviceBase(Config config, const DeviceInfo& devInfo) : deviceInfo(de
 void DeviceBase::close() {
     std::unique_lock<std::mutex> lock(closedMtx);
     if(!closed) {
-        stopAnalyticsLifecycle();
+        if(analyticsLifecycleStarted) {
+            // Match the shutdown behavior of the other long-lived XLink threads:
+            // request stop now, but only join after closeImpl() closes the
+            // connection and unblocks any blocking XLink reads.
+            analyticsEventRunning = false;
+            analyticsPingRunning = false;
+            analyticsPingCondVar.notify_all();
+        }
         closeImpl();
+        stopAnalyticsLifecycle();
         closed = true;
     }
 }
