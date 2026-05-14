@@ -54,8 +54,8 @@ std::pair<std::shared_ptr<dcl::CameraCalibrationHandle>, std::shared_ptr<dcl::Ca
     const CalibrationHandler& currentCalibration,
     const CameraBoardSocket boardSocketA,
     const CameraBoardSocket boardSocketB,
-    ImgTransformation& imgTransformationA,
-    ImgTransformation& imgTransformationB) {
+    const ImgTransformation& imgTransformationA,
+    const ImgTransformation& imgTransformationB) {
     // clang-format off
     std::array<std::array<float, 3>, 3> cameraMatrixA = imgTransformationA.getSourceIntrinsicMatrix();
     std::shared_ptr<dcl::CameraCalibrationHandle> calibA = DclUtils::createDclCalibration(cameraMatrixA, imgTransformationA.getDistortionCoefficients(),

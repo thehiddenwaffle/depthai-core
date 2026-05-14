@@ -26,8 +26,8 @@ struct DclUtils {
         const CalibrationHandler& currentCalibration,
         const CameraBoardSocket boardSocketA,
         const CameraBoardSocket boardSocketB,
-        ImgTransformation& imgTransformationA,
-        ImgTransformation& imgTransformationB);
+        const ImgTransformation& imgTransformationA,
+        const ImgTransformation& imgTransformationB);
 
 #ifdef DEPTHAI_HAVE_OPENCV_SUPPORT
     static dcl::ImageData cvMatToImageData(const cv::Mat& mat);
