@@ -18,8 +18,15 @@ try:
 except Exception as ex:
     print(f'No factory calibration: {ex}')
 
-print(f'\nUser calibration raw: {device.readCalibrationRaw().hex(" ")}')
-print(f'\nFactory calibration raw: {device.readFactoryCalibrationRaw().hex(" ")}')
+try:
+    print(f'\nUser calibration raw: {device.readCalibrationRaw().hex(" ")}')
+except Exception as ex:
+    print(f'\nNo user calibration raw data: {ex}')
+
+try:
+    print(f'\nFactory calibration raw: {device.readFactoryCalibrationRaw().hex(" ")}')
+except Exception as ex:
+    print(f'\nNo factory calibration raw data: {ex}')
 
 camera_sockets = [
     dai.CameraBoardSocket.CAM_A,

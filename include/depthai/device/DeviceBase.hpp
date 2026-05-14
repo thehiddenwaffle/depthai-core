@@ -742,7 +742,7 @@ class DeviceBase {
     /**
      * Stores the Calibration and Device information to the CBA EEPROM
      *
-     * @throws std::runtime_exception if failed to flash the calibration
+     * @throws std::runtime_error if failed to flash the calibration
      * @param calibrationObj CalibrationHandler object which is loaded with calibration information.
      * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
      */
@@ -812,7 +812,7 @@ class DeviceBase {
      *
      * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
      *
-     * @throws std::runtime_exception if no calibration is flashed
+     * @throws std::runtime_error if no calibration is flashed
      * @return The CalibrationHandler object containing the calibration currently flashed on device EEPROM
      */
     CalibrationHandler readCalibration2(CameraBoardSocket camSocket);
@@ -847,7 +847,7 @@ class DeviceBase {
      *
      * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
      *
-     * @throws std::runtime_exception If factory reset was unsuccessful
+     * @throws std::runtime_error If factory reset was unsuccessful
      */
     void factoryResetCalibration(CameraBoardSocket camSocket);
 
@@ -867,7 +867,7 @@ class DeviceBase {
      * @param calibrationHandler CalibrationHandler
      * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
      *
-     * @throws std::runtime_exception if failed to flash the calibration
+     * @throws std::runtime_error if failed to flash the calibration
      * @return True on successful flash, false on failure
      */
     void flashFactoryCalibration(CalibrationHandler calibrationHandler, CameraBoardSocket camSocket);
@@ -887,7 +887,7 @@ class DeviceBase {
      *
      * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
      *
-     * @throws std::runtime_exception if failed to flash the calibration
+     * @throws std::runtime_error if failed to flash the calibration
      * @return True on successful flash, false on failure
      */
     void flashEepromClear(CameraBoardSocket camSocket);
@@ -907,7 +907,7 @@ class DeviceBase {
      *
      * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
      *
-     * @throws std::runtime_exception if failed to flash the calibration
+     * @throws std::runtime_error if failed to flash the calibration
      * @return True on successful flash, false on failure
      */
     void flashFactoryEepromClear(CameraBoardSocket camSocket);
@@ -925,7 +925,7 @@ class DeviceBase {
      *
      * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
      *
-     * @throws std::runtime_exception if no calibration is flashed
+     * @throws std::runtime_error if no calibration is flashed
      * @return The CalibrationHandler object containing the calibration currently flashed on device EEPROM in Factory Area
      */
     CalibrationHandler readFactoryCalibration(CameraBoardSocket camSocket);
