@@ -1938,6 +1938,12 @@ std::vector<std::uint8_t> DeviceBase::readCalibrationRaw() {
 }
 
 std::vector<std::uint8_t> DeviceBase::readCcmEepromRaw(CameraBoardSocket socket, int size, int offset) {
+    if(size < 0) {
+        throw std::runtime_error("size must be non-negative");
+    }
+    if(offset < 0) {
+        throw std::runtime_error("offset must be non-negative");
+    }
     bool success;
     std::string errorMsg;
     std::vector<uint8_t> eepromDataRaw;
@@ -1950,6 +1956,9 @@ std::vector<std::uint8_t> DeviceBase::readCcmEepromRaw(CameraBoardSocket socket,
 }
 
 void DeviceBase::writeCcmEepromRaw(CameraBoardSocket socket, std::vector<uint8_t> data, int offset) {
+    if(offset < 0) {
+        throw std::runtime_error("offset must be non-negative");
+    }
     bool factoryPermissions = false;
     bool protectedPermissions = false;
     getFlashingPermissions(factoryPermissions, protectedPermissions);

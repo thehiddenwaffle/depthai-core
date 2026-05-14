@@ -888,11 +888,11 @@ void DeviceBindings::bind(pybind11::module& m, void* pCallstack) {
         .def(
             "writeCcmEepromRaw",
             [](DeviceBase& d, CameraBoardSocket s, py::bytes buf, int o) {
+                std::string data = buf;
+                std::vector<uint8_t> raw(data.begin(), data.end());
+
                 py::gil_scoped_release release;
-
-                std::string_view sv = buf;
-
-                d.writeCcmEepromRaw(s, std::vector<uint8_t>(sv.begin(), sv.end()), o);
+                d.writeCcmEepromRaw(s, raw, o);
             },
             py::arg("socket"),
             py::arg("data"),
