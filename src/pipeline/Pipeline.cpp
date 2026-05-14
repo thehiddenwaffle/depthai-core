@@ -91,14 +91,15 @@ std::optional<PipelineAutoCalibrationMode> parseAutoCalibrationMode(std::string_
     return std::nullopt;
 }
 
-void emitHostOnlyPipelineStartedTelemetry(const dai::PipelineSchema& schema, const std::string& anonymousTelemetryId, const std::string& deviceId) {
+void emitPipelineStartedTelemetry(
+    const dai::PipelineSchema& schema, const std::string& anonymousTelemetryId, const std::string& deviceId, bool hostOnly) {
     if(!dai::utility::getEnvAs<bool>("DEPTHAI_TELEMETRY", true, false)) {
         return;
     }
 
     static dai::utility::Telemetry telemetry;
     nlohmann::json properties = {
-        {"host_only", true},
+        {"host_only", hostOnly},
         {"node_count", schema.nodes.size()},
         {"connection_count", schema.connections.size()},
         {"bridge_count", schema.bridges.size()},
@@ -1177,11 +1178,10 @@ void PipelineImpl::start() {
 
     telemetryPipelineStartedAt = std::chrono::steady_clock::now();
 
-    if(isHostOnly()) {
-        emitHostOnlyPipelineStartedTelemetry(getPipelineSchema(SerializationType::JSON, false),
-                                             defaultDevice ? defaultDevice->anonymousTelemetryId : "",
-                                             defaultDevice ? defaultDevice->getDeviceId() : "");
-    }
+    emitPipelineStartedTelemetry(getPipelineSchema(SerializationType::JSON, false),
+                                 defaultDevice ? defaultDevice->anonymousTelemetryId : "",
+                                 defaultDevice ? defaultDevice->getDeviceId() : "",
+                                 isHostOnly());
 
     // Add pointer to the pipeline to the device
     if(defaultDevice) {

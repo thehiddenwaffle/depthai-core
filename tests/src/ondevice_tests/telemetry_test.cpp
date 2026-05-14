@@ -224,7 +224,7 @@ std::vector<ReceivedRequest> runTelemetryScenario() {
                            subprocess::environment{std::move(childEnv)},
                            subprocess::session_leader{true});
 
-    const std::set<std::string> requiredEvents = {"depthai_load", "device_constructor", "pipeline_start", "pipeline_stop"};
+    const std::set<std::string> requiredEvents = {"depthai_load", "device_constructor", "camera_sensor_mode_started", "pipeline_start", "pipeline_stop"};
     const bool waitedForEvents = server.waitForRequiredEvents(requiredEvents, kRequestTimeout);
     const auto requests = server.snapshot();
     const bool listenFailed = server.hadListenFailure();
@@ -273,10 +273,11 @@ std::vector<ReceivedRequest> runTelemetryScenario() {
 
 void validateRequests(const std::vector<ReceivedRequest>& requests) {
     CAPTURE(requests.size());
-    REQUIRE(requests.size() >= 4);
+    REQUIRE(requests.size() >= 5);
 
     std::map<std::string, int> counts;
-    const std::set<std::string> allowedEvents = {"depthai_load", "device_constructor", "pipeline_start", "pipeline_stop", "device_destructor", "ping"};
+    const std::set<std::string> allowedEvents = {
+        "depthai_load", "device_constructor", "camera_sensor_mode_started", "pipeline_start", "pipeline_stop", "device_destructor", "ping"};
 
     for(const auto& request : requests) {
         expectCommonEventShape(request);
@@ -290,6 +291,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
 
     const auto& depthaiLoad = getSingleEventRequest(requests, "depthai_load");
     const auto& deviceConstructor = getSingleEventRequest(requests, "device_constructor");
+    const auto& cameraSensorModeStarted = getSingleEventRequest(requests, "camera_sensor_mode_started");
     const auto& pipelineStart = getSingleEventRequest(requests, "pipeline_start");
     const auto& pipelineStop = getSingleEventRequest(requests, "pipeline_stop");
     const auto depthaiLoadProperties = depthaiLoad.body["properties"];
@@ -306,6 +308,18 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     REQUIRE_FALSE(deviceConstructorProperties.value("platform", std::string{}).empty());
     REQUIRE((deviceConstructorProperties.value("protocol", std::string{}) == "usb" || deviceConstructorProperties.value("protocol", std::string{}) == "ethernet"));
     REQUIRE_FALSE(deviceConstructorProperties.value("protocol_speed", std::string{}).empty());
+    const auto cameraSensorModeStartedProperties = cameraSensorModeStarted.body["properties"];
+    REQUIRE_FALSE(cameraSensorModeStartedProperties.value("socket", std::string{}).empty());
+    expectIntegerProperty(cameraSensorModeStartedProperties, "width");
+    expectIntegerProperty(cameraSensorModeStartedProperties, "height");
+    REQUIRE(cameraSensorModeStartedProperties.contains("fps"));
+    REQUIRE(cameraSensorModeStartedProperties["fps"].is_number());
+    REQUIRE((cameraSensorModeStartedProperties.value("fsync_mode", std::string{}) == "none"
+             || cameraSensorModeStartedProperties.value("fsync_mode", std::string{}) == "input"
+             || cameraSensorModeStartedProperties.value("fsync_mode", std::string{}) == "output"
+             || cameraSensorModeStartedProperties.value("fsync_mode", std::string{}) == "ptp"));
+    REQUIRE(cameraSensorModeStartedProperties.contains("hdr_enabled"));
+    REQUIRE(cameraSensorModeStartedProperties["hdr_enabled"].is_boolean());
 
     const auto pipelineStartProperties = pipelineStart.body["properties"];
     REQUIRE(pipelineStartProperties.contains("host_only"));
@@ -327,10 +341,12 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
 
     CAPTURE(counts["depthai_load"]);
     CAPTURE(counts["device_constructor"]);
+    CAPTURE(counts["camera_sensor_mode_started"]);
     CAPTURE(counts["pipeline_start"]);
     CAPTURE(counts["pipeline_stop"]);
     REQUIRE(counts["depthai_load"] == 1);
     REQUIRE(counts["device_constructor"] == 1);
+    REQUIRE(counts["camera_sensor_mode_started"] == 1);
     REQUIRE(counts["pipeline_start"] == 1);
     REQUIRE(counts["pipeline_stop"] == 1);
 }

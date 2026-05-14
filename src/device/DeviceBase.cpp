@@ -2309,13 +2309,6 @@ bool DeviceBase::startPipelineImpl(const Pipeline& pipeline) {
     std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>("buildPipeline");
     if(success) {
         pimpl->rpcCallCheckedVoid("startPipeline");
-        emitDeviceTelemetryEvent("pipeline_start",
-                                 nlohmann::json{
-                                     {"host_only", false},
-                                     {"node_count", schema.nodes.size()},
-                                     {"connection_count", schema.connections.size()},
-                                     {"bridge_count", schema.bridges.size()},
-                                 });
     } else {
         throw std::runtime_error("Device " + getDeviceId() + " error: " + errorMsg);
         return false;

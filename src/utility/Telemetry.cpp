@@ -49,6 +49,10 @@ constexpr std::size_t DEFAULT_MAX_BATCH_SIZE = 50;
 constexpr std::chrono::seconds DEFAULT_FLUSH_INTERVAL{30};
 constexpr std::chrono::seconds RETRY_DELAY{5};
 constexpr std::chrono::seconds MAX_RETRY_DELAY{30};
+#if defined(TARGET_DEVICE_RVC4)
+constexpr std::chrono::milliseconds DEVICE_STREAM_OPEN_RETRY_DELAY{50};
+constexpr int DEVICE_STREAM_OPEN_RETRIES = 20;
+#endif
 constexpr char DEFAULT_POSTHOG_HOST[] = "https://eu.i.posthog.com";
 constexpr char DEFAULT_POSTHOG_API_KEY[] = "phc_navwoWmBZEUeN5UH2sFBbQJSJw6DwEUkFa8QTq9W4Mji";
 constexpr char DEFAULT_TELEMETRY_ROOT_DIR[] = "telemetry";
@@ -421,7 +425,13 @@ struct TelemetryDeviceSharedState {
 
         std::lock_guard<std::mutex> lock(mutex);
         if(streamId == INVALID_STREAM_ID) {
-            streamId = XLinkOpenStream(0, device::XLINK_CHANNEL_TELEMETRY, static_cast<int>(std::max<std::size_t>(serialized.size(), 4096)));
+            for(int retry = 0; retry < DEVICE_STREAM_OPEN_RETRIES; ++retry) {
+                streamId = XLinkOpenStream(0, device::XLINK_CHANNEL_TELEMETRY, static_cast<int>(std::max<std::size_t>(serialized.size(), 4096)));
+                if(streamId != INVALID_STREAM_ID) {
+                    break;
+                }
+                std::this_thread::sleep_for(DEVICE_STREAM_OPEN_RETRY_DELAY);
+            }
             if(streamId == INVALID_STREAM_ID) {
                 return;
             }
