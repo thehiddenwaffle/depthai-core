@@ -398,9 +398,9 @@ add_executable(test_wrapper src/helpers/test_wrapper.cpp)
 target_include_directories(test_wrapper PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include/subprocess)
 target_link_libraries(test_wrapper PRIVATE depthai::core Threads::Threads spdlog::spdlog)
 
-add_executable(analytics_telemetry_test_child src/ondevice_tests/analytics_telemetry_test_child.cpp)
-add_default_flags(analytics_telemetry_test_child LEAN)
-target_link_libraries(analytics_telemetry_test_child PRIVATE depthai::core Threads::Threads spdlog::spdlog)
+add_executable(telemetry_test_child src/ondevice_tests/telemetry_test_child.cpp)
+add_default_flags(telemetry_test_child LEAN)
+target_link_libraries(telemetry_test_child PRIVATE depthai::core Threads::Threads spdlog::spdlog)
 
 ### On-host tests #############################################################
 
@@ -534,13 +534,13 @@ dai_set_test_labels(camera_stream_restart_test ondevice rvc2_all rvc4 rvc4rgb ci
 dai_add_test(logging_test src/ondevice_tests/logging_test.cpp)
 dai_set_test_labels(logging_test ondevice rvc2_all rvc4 rvc4rgb ci)
 
-# Analytics telemetry redirect test
-dai_add_test(analytics_telemetry_test src/ondevice_tests/analytics_telemetry_test.cpp)
-target_include_directories(analytics_telemetry_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include/subprocess)
-target_link_libraries(analytics_telemetry_test PRIVATE httplib::httplib)
-target_compile_definitions(analytics_telemetry_test PRIVATE DEPTHAI_ANALYTICS_TEST_CHILD_PATH="$<TARGET_FILE:analytics_telemetry_test_child>")
-add_dependencies(analytics_telemetry_test analytics_telemetry_test_child)
-dai_set_test_labels(analytics_telemetry_test ondevice rvc2_all rvc4 rvc4rgb ci)
+# Telemetry redirect test
+dai_add_test(telemetry_test src/ondevice_tests/telemetry_test.cpp)
+target_include_directories(telemetry_test PRIVATE ${CMAKE_CURRENT_LIST_DIR}/include/subprocess)
+target_link_libraries(telemetry_test PRIVATE httplib::httplib)
+target_compile_definitions(telemetry_test PRIVATE DEPTHAI_TELEMETRY_TEST_CHILD_PATH="$<TARGET_FILE:telemetry_test_child>")
+add_dependencies(telemetry_test telemetry_test_child)
+dai_set_test_labels(telemetry_test ondevice rvc2_all rvc4 rvc4rgb ci)
 
 # OpenVINO blob test
 if(DEPTHAI_FETCH_ARTIFACTS)

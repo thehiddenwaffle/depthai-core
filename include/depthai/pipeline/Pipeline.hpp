@@ -166,7 +166,7 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
 
     // is pipeline running
     AtomicBool running{false};
-    std::optional<std::chrono::steady_clock::time_point> analyticsPipelineStartedAt;
+    std::optional<std::chrono::steady_clock::time_point> telemetryPipelineStartedAt;
 
     // was pipeline built
     AtomicBool isBuild{false};

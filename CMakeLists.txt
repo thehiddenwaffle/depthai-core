@@ -406,7 +406,7 @@ set(TARGET_CORE_SOURCES
     src/utility/McapImpl.cpp
     src/utility/Environment.cpp
     src/utility/Compression.cpp
-    src/utility/Analytics.cpp
+    src/utility/Telemetry.cpp
     src/utility/XLinkGlobalProfilingLogger.cpp
     src/utility/Logging.cpp
     src/utility/Checksum.cpp

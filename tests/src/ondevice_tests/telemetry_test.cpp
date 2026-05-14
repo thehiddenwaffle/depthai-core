@@ -147,7 +147,7 @@ class LocalTelemetryServer {
 
 subprocess::env_map_t makeChildEnv(const std::filesystem::path& tempHome) {
     return {
-        {makeEnvString("DEPTHAI_ANALYTICS"), makeEnvString("1")},
+        {makeEnvString("DEPTHAI_TELEMETRY"), makeEnvString("1")},
         {makeEnvString("DEPTHAI_TELEMETRY_URL"), makeEnvString(kTelemetryUrl)},
         {makeEnvString("HOME"), makeEnvString(tempHome.string())},
     };
@@ -207,16 +207,16 @@ void expectIntegerProperty(const Json& value, const std::string& key) {
 }
 
 std::vector<ReceivedRequest> runTelemetryScenario() {
-#ifndef DEPTHAI_ANALYTICS_TEST_CHILD_PATH
-    FAIL("DEPTHAI_ANALYTICS_TEST_CHILD_PATH was not defined");
+#ifndef DEPTHAI_TELEMETRY_TEST_CHILD_PATH
+    FAIL("DEPTHAI_TELEMETRY_TEST_CHILD_PATH was not defined");
 #endif
 
     LocalTelemetryServer server;
     server.start();
 
-    const ScopedTempDir tempHome("depthai-analytics-test");
+    const ScopedTempDir tempHome("depthai-telemetry-test");
     std::filesystem::create_directories(tempHome.get());
-    const auto executableString = std::filesystem::path(DEPTHAI_ANALYTICS_TEST_CHILD_PATH).string();
+    const auto executableString = std::filesystem::path(DEPTHAI_TELEMETRY_TEST_CHILD_PATH).string();
     auto childEnv = makeChildEnv(tempHome.get());
     subprocess::Popen proc({executableString},
                            subprocess::output{subprocess::PIPE},
@@ -337,7 +337,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
 
 }  // namespace
 
-TEST_CASE("Analytics can be redirected with DEPTHAI_TELEMETRY_URL", "[ondevice][analytics]") {
+TEST_CASE("Telemetry can be redirected with DEPTHAI_TELEMETRY_URL", "[ondevice][telemetry]") {
     const auto requests = runTelemetryScenario();
     validateRequests(requests);
 }

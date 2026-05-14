@@ -1,4 +1,4 @@
-#include "depthai/utility/Analytics.hpp"
+#include "depthai/utility/Telemetry.hpp"
 
 #include <algorithm>
 #include <array>
@@ -94,8 +94,8 @@ std::string normalizeCaptureUrl(std::string url) {
     return url;
 }
 
-bool analyticsEnabledByDefault() {
-    auto value = trim(readEnv("DEPTHAI_ANALYTICS"));
+bool telemetryEnabledByDefault() {
+    auto value = trim(readEnv("DEPTHAI_TELEMETRY"));
     if(value.empty()) {
         return true;
     }
@@ -219,7 +219,7 @@ bool isExpired(const TemporaryDeviceIdEntry& entry, int64_t currentMs) {
     return entry.tmpDeviceId.empty() || entry.expiresAtMs <= currentMs;
 }
 
-std::string getAnalyticsHostOSImpl() {
+std::string getTelemetryHostOSImpl() {
     if(!readEnv("OAKAGENT_APP_ID").empty() || !readEnv("OAKAGENT_APP_IDENTIFIER").empty()) {
         return "oakapp";
     }
@@ -385,12 +385,12 @@ TemporaryIdsManager& temporaryIdsManager() {
 
 #if defined(TARGET_DEVICE_RVC4)
 
-struct AnalyticsDeviceSharedState {
+struct TelemetryDeviceSharedState {
     std::mutex mutex;
     streamId_t streamId{INVALID_STREAM_ID};
-    bool enabled{analyticsEnabledByDefault()};
+    bool enabled{telemetryEnabledByDefault()};
 
-    ~AnalyticsDeviceSharedState() {
+    ~TelemetryDeviceSharedState() {
         std::lock_guard<std::mutex> lock(mutex);
         if(streamId != INVALID_STREAM_ID) {
             XLinkCloseStream(streamId);
@@ -421,7 +421,7 @@ struct AnalyticsDeviceSharedState {
 
         std::lock_guard<std::mutex> lock(mutex);
         if(streamId == INVALID_STREAM_ID) {
-            streamId = XLinkOpenStream(0, device::XLINK_CHANNEL_ANALYTICS, static_cast<int>(std::max<std::size_t>(serialized.size(), 4096)));
+            streamId = XLinkOpenStream(0, device::XLINK_CHANNEL_TELEMETRY, static_cast<int>(std::max<std::size_t>(serialized.size(), 4096)));
             if(streamId == INVALID_STREAM_ID) {
                 return;
             }
@@ -435,21 +435,21 @@ struct AnalyticsDeviceSharedState {
     }
 };
 
-AnalyticsDeviceSharedState& analyticsSharedState() {
-    static AnalyticsDeviceSharedState state;
+TelemetryDeviceSharedState& telemetrySharedState() {
+    static TelemetryDeviceSharedState state;
     return state;
 }
 
-class Analytics::Impl {
+class Telemetry::Impl {
    public:
     void event(std::string eventName, nlohmann::json properties) {
-        analyticsSharedState().event(std::move(eventName), std::move(properties));
+        telemetrySharedState().event(std::move(eventName), std::move(properties));
     }
 };
 
 #else
 
-struct AnalyticsSharedState {
+struct TelemetrySharedState {
     bool enabled{false};
     std::string apiKey;
     std::string captureUrl;
@@ -473,8 +473,8 @@ struct AnalyticsSharedState {
     std::size_t retryCount{0};
     std::optional<Clock::time_point> pausedUntil;
 
-    AnalyticsSharedState();
-    ~AnalyticsSharedState();
+    TelemetrySharedState();
+    ~TelemetrySharedState();
 
     void event(std::string eventName, nlohmann::json properties);
     void loadQueueFromDisk();
@@ -486,19 +486,19 @@ struct AnalyticsSharedState {
     void deleteFileOnDisk(const std::string& filename);
 };
 
-AnalyticsSharedState& analyticsSharedState() {
-    static AnalyticsSharedState state;
+TelemetrySharedState& telemetrySharedState() {
+    static TelemetrySharedState state;
     return state;
 }
 
-class Analytics::Impl {
+class Telemetry::Impl {
    public:
     void event(std::string eventName, nlohmann::json properties) {
-        analyticsSharedState().event(std::move(eventName), std::move(properties));
+        telemetrySharedState().event(std::move(eventName), std::move(properties));
     }
 };
 
-AnalyticsSharedState::AnalyticsSharedState() {
+TelemetrySharedState::TelemetrySharedState() {
     captureUrl = normalizeCaptureUrl(readEnv("DEPTHAI_TELEMETRY_URL"));
     apiKey = DEFAULT_POSTHOG_API_KEY;
     distinctId = sessionKey;
@@ -508,24 +508,24 @@ AnalyticsSharedState::AnalyticsSharedState() {
         std::filesystem::create_directories(queueDir);
         loadQueueFromDisk();
     } catch(const std::exception& ex) {
-        logger::warn("Failed to initialize analytics storage at '{}': {}", queueDir.string(), ex.what());
+        logger::warn("Failed to initialize telemetry storage at '{}': {}", queueDir.string(), ex.what());
         return;
     }
 
     #ifdef DEPTHAI_ENABLE_CURL
-    enabled = analyticsEnabledByDefault();
+    enabled = telemetryEnabledByDefault();
     if(!enabled) {
-        logger::debug("Analytics disabled via DEPTHAI_ANALYTICS");
+        logger::debug("Telemetry disabled via DEPTHAI_TELEMETRY");
         return;
     }
 
     worker = std::thread([this]() { workerLoop(); });
     #else
-    logger::debug("Analytics disabled: depthai-core was built without CURL support");
+    logger::debug("Telemetry disabled: depthai-core was built without CURL support");
     #endif
 }
 
-AnalyticsSharedState::~AnalyticsSharedState() {
+TelemetrySharedState::~TelemetrySharedState() {
     {
         std::lock_guard<std::mutex> lock(mutex);
         stopRequested = true;
@@ -540,28 +540,28 @@ AnalyticsSharedState::~AnalyticsSharedState() {
     cleanupRunDirectory();
 }
 
-void AnalyticsSharedState::event(std::string eventName, nlohmann::json properties) {
+void TelemetrySharedState::event(std::string eventName, nlohmann::json properties) {
     if(!enabled) {
         return;
     }
 
     eventName = trim(std::move(eventName));
     if(eventName.empty()) {
-        logger::debug("Skipping analytics event with an empty name");
+        logger::debug("Skipping telemetry event with an empty name");
         return;
     }
 
     if(!properties.is_object()) {
-        logger::warn("Analytics properties for '{}' must be a JSON object. Dropping invalid properties.", eventName);
+        logger::warn("Telemetry properties for '{}' must be a JSON object. Dropping invalid properties.", eventName);
         properties = nlohmann::json::object();
     }
 
     std::string eventDistinctId = distinctId;
-    if(properties.contains("__analytics_distinct_id")) {
-        if(properties["__analytics_distinct_id"].is_string()) {
-            eventDistinctId = properties["__analytics_distinct_id"].get<std::string>();
+    if(properties.contains("__telemetry_distinct_id")) {
+        if(properties["__telemetry_distinct_id"].is_string()) {
+            eventDistinctId = properties["__telemetry_distinct_id"].get<std::string>();
         }
-        properties.erase("__analytics_distinct_id");
+        properties.erase("__telemetry_distinct_id");
     }
 
     if(!properties.contains("$lib")) {
@@ -590,14 +590,14 @@ void AnalyticsSharedState::event(std::string eventName, nlohmann::json propertie
             const auto oldest = queuedFiles.front();
             queuedFiles.pop_front();
             deleteFileOnDisk(oldest);
-            logger::debug("Analytics queue is full, dropping oldest event '{}'", oldest);
+            logger::debug("Telemetry queue is full, dropping oldest event '{}'", oldest);
         }
 
         filename = makeQueueFilename();
         const auto eventPath = queueDir / filename;
         std::ofstream output(eventPath, std::ios::binary | std::ios::trunc);
         if(!output) {
-            logger::warn("Failed to open analytics queue file '{}'", eventPath.string());
+            logger::warn("Failed to open telemetry queue file '{}'", eventPath.string());
             return;
         }
 
@@ -606,7 +606,7 @@ void AnalyticsSharedState::event(std::string eventName, nlohmann::json propertie
             output.close();
             std::error_code ec;
             std::filesystem::remove(eventPath, ec);
-            logger::warn("Failed to write analytics queue file '{}'", eventPath.string());
+            logger::warn("Failed to write telemetry queue file '{}'", eventPath.string());
             return;
         }
 
@@ -619,7 +619,7 @@ void AnalyticsSharedState::event(std::string eventName, nlohmann::json propertie
     condition.notify_one();
 }
 
-void AnalyticsSharedState::loadQueueFromDisk() {
+void TelemetrySharedState::loadQueueFromDisk() {
     std::vector<std::string> filenames;
     for(const auto& entry : std::filesystem::directory_iterator(queueDir)) {
         if(entry.is_regular_file()) {
@@ -639,7 +639,7 @@ void AnalyticsSharedState::loadQueueFromDisk() {
     queuedFiles.assign(filenames.begin(), filenames.end());
 }
 
-void AnalyticsSharedState::workerLoop() {
+void TelemetrySharedState::workerLoop() {
     auto nextFlushAt = Clock::now() + flushInterval;
 
     std::unique_lock<std::mutex> lock(mutex);
@@ -678,7 +678,7 @@ void AnalyticsSharedState::workerLoop() {
     flushOneBatch();
 }
 
-void AnalyticsSharedState::flushOneBatch() {
+void TelemetrySharedState::flushOneBatch() {
     std::vector<std::string> batchFiles;
     {
         std::lock_guard<std::mutex> lock(mutex);
@@ -698,7 +698,7 @@ void AnalyticsSharedState::flushOneBatch() {
 
         std::ifstream input(filePath, std::ios::binary);
         if(!input) {
-            logger::warn("Analytics queue file '{}' is missing", filePath.string());
+            logger::warn("Telemetry queue file '{}' is missing", filePath.string());
             invalidFiles.push_back(filename);
             continue;
         }
@@ -713,7 +713,7 @@ void AnalyticsSharedState::flushOneBatch() {
             }
             events.push_back(eventPayload);
         } catch(const std::exception& ex) {
-            logger::warn("Failed to parse analytics queue file '{}': {}", filePath.string(), ex.what());
+            logger::warn("Failed to parse telemetry queue file '{}': {}", filePath.string(), ex.what());
             invalidFiles.push_back(filename);
         }
     }
@@ -766,9 +766,9 @@ void AnalyticsSharedState::flushOneBatch() {
             const bool retryable = static_cast<bool>(response.error) || (statusCode >= 300 && statusCode <= 399) || statusCode <= 0;
 
             if(response.error) {
-                logger::debug("Analytics capture upload error {}: {}", static_cast<int>(response.error.code), response.error.message);
+                logger::debug("Telemetry capture upload error {}: {}", static_cast<int>(response.error.code), response.error.message);
             } else if(statusCode < 200 || statusCode > 299) {
-                logger::debug("Analytics capture upload failed with status {}: {}", statusCode, response.text);
+                logger::debug("Telemetry capture upload failed with status {}: {}", statusCode, response.text);
             }
 
             if(retryable) {
@@ -779,7 +779,7 @@ void AnalyticsSharedState::flushOneBatch() {
             deletableFiles.push_back(batchFiles[index]);
         }
     } catch(const std::exception& ex) {
-        logger::debug("Analytics capture upload threw an exception: {}", ex.what());
+        logger::debug("Telemetry capture upload threw an exception: {}", ex.what());
         shouldRetry = true;
     }
     #endif
@@ -792,7 +792,7 @@ void AnalyticsSharedState::flushOneBatch() {
         const auto delaySeconds =
             std::min<std::size_t>(retryCount * static_cast<std::size_t>(RETRY_DELAY.count()), static_cast<std::size_t>(MAX_RETRY_DELAY.count()));
         pausedUntil = Clock::now() + std::chrono::seconds(delaySeconds);
-        logger::debug("Pausing analytics uploads for {} seconds after retryable failure", delaySeconds);
+        logger::debug("Pausing telemetry uploads for {} seconds after retryable failure", delaySeconds);
         return;
     }
 
@@ -801,74 +801,74 @@ void AnalyticsSharedState::flushOneBatch() {
     deleteFilesLocked(batchFiles);
 }
 
-void AnalyticsSharedState::removeFileFromQueueLocked(const std::string& filename) {
+void TelemetrySharedState::removeFileFromQueueLocked(const std::string& filename) {
     const auto iterator = std::find(queuedFiles.begin(), queuedFiles.end(), filename);
     if(iterator != queuedFiles.end()) {
         queuedFiles.erase(iterator);
     }
 }
 
-void AnalyticsSharedState::deleteFilesLocked(const std::vector<std::string>& filenames) {
+void TelemetrySharedState::deleteFilesLocked(const std::vector<std::string>& filenames) {
     for(const auto& filename : filenames) {
         removeFileFromQueueLocked(filename);
         deleteFileOnDisk(filename);
     }
 }
 
-void AnalyticsSharedState::deleteFileOnDisk(const std::string& filename) {
+void TelemetrySharedState::deleteFileOnDisk(const std::string& filename) {
     std::error_code ec;
     std::filesystem::remove(queueDir / filename, ec);
     if(ec) {
-        logger::debug("Failed to delete analytics queue file '{}': {}", filename, ec.message());
+        logger::debug("Failed to delete telemetry queue file '{}': {}", filename, ec.message());
     }
 }
 
-void AnalyticsSharedState::cleanupRunDirectory() {
+void TelemetrySharedState::cleanupRunDirectory() {
     std::error_code ec;
     std::filesystem::remove_all(queueDir, ec);
     if(ec) {
-        logger::debug("Failed to delete analytics run directory '{}': {}", queueDir.string(), ec.message());
+        logger::debug("Failed to delete telemetry run directory '{}': {}", queueDir.string(), ec.message());
     }
 }
 
 #endif
 
-Analytics::Analytics() : impl(std::make_unique<Impl>()) {}
+Telemetry::Telemetry() : impl(std::make_unique<Impl>()) {}
 
-Analytics::~Analytics() = default;
+Telemetry::~Telemetry() = default;
 
-std::string getTemporaryHostId() {
+std::string getTemporaryTelemetryHostId() {
     return temporaryIdsManager().getHostId();
 }
 
-std::string getTemporaryDeviceId(const std::string& mxid) {
+std::string getTemporaryTelemetryDeviceId(const std::string& mxid) {
     return temporaryIdsManager().getDeviceId(mxid);
 }
 
-std::string getAnalyticsHostOS() {
-    return getAnalyticsHostOSImpl();
+std::string getTelemetryHostOS() {
+    return getTelemetryHostOSImpl();
 }
 
-std::string getAnalyticsHostOSVersion() {
+std::string getTelemetryHostOSVersion() {
     return dai::platform::getOSVersion();
 }
 
-void emitDepthaiLoadEvent() {
+void emitDepthaiTelemetryLoadEvent() {
 #if defined(TARGET_DEVICE_RVC4)
     return;
 #else
-    Analytics analytics;
-    analytics.event("depthai_load",
+    Telemetry telemetry;
+    telemetry.event("depthai_load",
                     nlohmann::json{
-                        {"host_id", getTemporaryHostId()},
-                        {"session_id", analyticsSharedState().sessionKey},
-                        {"host_os", getAnalyticsHostOS()},
-                        {"host_os_version", getAnalyticsHostOSVersion()},
+                        {"host_id", getTemporaryTelemetryHostId()},
+                        {"session_id", telemetrySharedState().sessionKey},
+                        {"host_os", getTelemetryHostOS()},
+                        {"host_os_version", getTelemetryHostOSVersion()},
                     });
 #endif
 }
 
-void Analytics::event(std::string eventName, std::map<std::string, std::string> properties) {
+void Telemetry::event(std::string eventName, std::map<std::string, std::string> properties) {
     nlohmann::json jsonProperties = nlohmann::json::object();
     for(auto& [key, value] : properties) {
         jsonProperties[key] = value;
@@ -876,7 +876,7 @@ void Analytics::event(std::string eventName, std::map<std::string, std::string> 
     event(std::move(eventName), std::move(jsonProperties));
 }
 
-void Analytics::event(std::string eventName, nlohmann::json properties) {
+void Telemetry::event(std::string eventName, nlohmann::json properties) {
     if(impl) {
         impl->event(std::move(eventName), std::move(properties));
     }

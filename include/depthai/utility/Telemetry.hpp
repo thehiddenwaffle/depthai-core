@@ -8,15 +8,15 @@
 namespace dai {
 namespace utility {
 
-class Analytics {
+class Telemetry {
    public:
-    Analytics();
-    ~Analytics();
+    Telemetry();
+    ~Telemetry();
 
-    Analytics(const Analytics&) = delete;
-    Analytics& operator=(const Analytics&) = delete;
-    Analytics(Analytics&&) = delete;
-    Analytics& operator=(Analytics&&) = delete;
+    Telemetry(const Telemetry&) = delete;
+    Telemetry& operator=(const Telemetry&) = delete;
+    Telemetry(Telemetry&&) = delete;
+    Telemetry& operator=(Telemetry&&) = delete;
 
     void event(std::string eventName, std::map<std::string, std::string> properties);
 
@@ -36,11 +36,11 @@ class Analytics {
     std::unique_ptr<Impl> impl;
 };
 
-std::string getTemporaryHostId();
-std::string getTemporaryDeviceId(const std::string& mxid);
-std::string getAnalyticsHostOS();
-std::string getAnalyticsHostOSVersion();
-void emitDepthaiLoadEvent();
+std::string getTemporaryTelemetryHostId();
+std::string getTemporaryTelemetryDeviceId(const std::string& mxid);
+std::string getTelemetryHostOS();
+std::string getTelemetryHostOSVersion();
+void emitDepthaiTelemetryLoadEvent();
 
 }  // namespace utility
 }  // namespace dai

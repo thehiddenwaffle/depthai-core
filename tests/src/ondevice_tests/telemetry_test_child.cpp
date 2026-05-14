@@ -56,7 +56,7 @@ int main() {
         pipeline.wait();
         return 0;
     } catch(const std::exception& ex) {
-        std::cerr << "Analytics telemetry child failed: " << ex.what() << '\n';
+        std::cerr << "Telemetry test child failed: " << ex.what() << '\n';
         return 1;
     }
 }

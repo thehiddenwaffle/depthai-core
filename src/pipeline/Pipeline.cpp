@@ -10,7 +10,7 @@
 #include "depthai/pipeline/node/internal/XLinkInHost.hpp"
 #include "depthai/pipeline/node/internal/XLinkOut.hpp"
 #include "depthai/pipeline/node/internal/XLinkOutHost.hpp"
-#include "depthai/utility/Analytics.hpp"
+#include "depthai/utility/Telemetry.hpp"
 #include "properties/GlobalProperties.hpp"
 #include "utility/Compression.hpp"
 #include "utility/Environment.hpp"
@@ -91,12 +91,12 @@ std::optional<PipelineAutoCalibrationMode> parseAutoCalibrationMode(std::string_
     return std::nullopt;
 }
 
-void emitHostOnlyPipelineStartedAnalytics(const dai::PipelineSchema& schema, const std::string& anonymousAnalyticsId, const std::string& deviceId) {
-    if(!dai::utility::getEnvAs<bool>("DEPTHAI_ANALYTICS", true, false)) {
+void emitHostOnlyPipelineStartedTelemetry(const dai::PipelineSchema& schema, const std::string& anonymousTelemetryId, const std::string& deviceId) {
+    if(!dai::utility::getEnvAs<bool>("DEPTHAI_TELEMETRY", true, false)) {
         return;
     }
 
-    static dai::utility::Analytics analytics;
+    static dai::utility::Telemetry telemetry;
     nlohmann::json properties = {
         {"host_only", true},
         {"node_count", schema.nodes.size()},
@@ -104,20 +104,20 @@ void emitHostOnlyPipelineStartedAnalytics(const dai::PipelineSchema& schema, con
         {"bridge_count", schema.bridges.size()},
     };
 
-    if(!anonymousAnalyticsId.empty()) {
-        properties["__analytics_distinct_id"] = anonymousAnalyticsId;
-        properties["anonymous_analytics_id"] = anonymousAnalyticsId;
+    if(!anonymousTelemetryId.empty()) {
+        properties["__telemetry_distinct_id"] = anonymousTelemetryId;
+        properties["anonymous_telemetry_id"] = anonymousTelemetryId;
     }
     if(!deviceId.empty()) {
         properties["device_id"] = deviceId;
     }
 
-    analytics.event("pipeline_start", std::move(properties));
+    telemetry.event("pipeline_start", std::move(properties));
 }
 
-void emitPipelineStoppedAnalytics(
-    const dai::PipelineSchema& schema, const std::string& anonymousAnalyticsId, const std::string& deviceId, int64_t durationMs, bool hostOnly) {
-    if(!dai::utility::getEnvAs<bool>("DEPTHAI_ANALYTICS", true, false)) {
+void emitPipelineStoppedTelemetry(
+    const dai::PipelineSchema& schema, const std::string& anonymousTelemetryId, const std::string& deviceId, int64_t durationMs, bool hostOnly) {
+    if(!dai::utility::getEnvAs<bool>("DEPTHAI_TELEMETRY", true, false)) {
         return;
     }
 
@@ -129,16 +129,16 @@ void emitPipelineStoppedAnalytics(
         {"duration_ms", durationMs},
     };
 
-    if(!anonymousAnalyticsId.empty()) {
-        properties["__analytics_distinct_id"] = anonymousAnalyticsId;
-        properties["anonymous_analytics_id"] = anonymousAnalyticsId;
+    if(!anonymousTelemetryId.empty()) {
+        properties["__telemetry_distinct_id"] = anonymousTelemetryId;
+        properties["anonymous_telemetry_id"] = anonymousTelemetryId;
     }
     if(!deviceId.empty()) {
         properties["device_id"] = deviceId;
     }
 
-    static dai::utility::Analytics analytics;
-    analytics.event("pipeline_stop", std::move(properties));
+    static dai::utility::Telemetry telemetry;
+    telemetry.event("pipeline_stop", std::move(properties));
 }
 
 #ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
@@ -1175,11 +1175,11 @@ void PipelineImpl::start() {
         }
     }
 
-    analyticsPipelineStartedAt = std::chrono::steady_clock::now();
+    telemetryPipelineStartedAt = std::chrono::steady_clock::now();
 
     if(isHostOnly()) {
-        emitHostOnlyPipelineStartedAnalytics(getPipelineSchema(SerializationType::JSON, false),
-                                             defaultDevice ? defaultDevice->anonymousAnalyticsId : "",
+        emitHostOnlyPipelineStartedTelemetry(getPipelineSchema(SerializationType::JSON, false),
+                                             defaultDevice ? defaultDevice->anonymousTelemetryId : "",
                                              defaultDevice ? defaultDevice->getDeviceId() : "");
     }
 
@@ -1250,14 +1250,14 @@ void PipelineImpl::stop() {
         return;
     }
 
-    if(analyticsPipelineStartedAt.has_value()) {
-        const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *analyticsPipelineStartedAt).count();
-        emitPipelineStoppedAnalytics(getPipelineSchema(SerializationType::JSON, false),
-                                     defaultDevice ? defaultDevice->anonymousAnalyticsId : "",
+    if(telemetryPipelineStartedAt.has_value()) {
+        const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *telemetryPipelineStartedAt).count();
+        emitPipelineStoppedTelemetry(getPipelineSchema(SerializationType::JSON, false),
+                                     defaultDevice ? defaultDevice->anonymousTelemetryId : "",
                                      defaultDevice ? defaultDevice->getDeviceId() : "",
                                      durationMs,
                                      isHostOnly());
-        analyticsPipelineStartedAt.reset();
+        telemetryPipelineStartedAt.reset();
     }
 
     // Stops the pipeline execution

@@ -35,7 +35,7 @@
 #include "depthai/device/EepromError.hpp"
 #include "depthai/pipeline/node/internal/XLinkIn.hpp"
 #include "depthai/pipeline/node/internal/XLinkOut.hpp"
-#include "depthai/utility/Analytics.hpp"
+#include "depthai/utility/Telemetry.hpp"
 #include "device/DeviceGate.hpp"
 #include "pipeline/Pipeline.hpp"
 #include "properties/GlobalProperties.hpp"
@@ -91,16 +91,16 @@ bool isDebuggerEnabled() {
     return dai::utility::getEnvAs<bool>("DEPTHAI_DEBUGGER", false);
 }
 
-dai::utility::Analytics& analyticsInstance() {
-    static dai::utility::Analytics analytics;
-    return analytics;
+dai::utility::Telemetry& telemetryInstance() {
+    static dai::utility::Telemetry telemetry;
+    return telemetry;
 }
 
-bool isAnalyticsEnabled() {
-    return dai::utility::getEnvAs<bool>("DEPTHAI_ANALYTICS", true, false);
+bool isTelemetryEnabled() {
+    return dai::utility::getEnvAs<bool>("DEPTHAI_TELEMETRY", true, false);
 }
 
-std::string generateAnalyticsSessionId() {
+std::string generateTelemetrySessionId() {
     static std::mt19937_64 generator(std::random_device{}());
     static std::uniform_int_distribution<int> distribution(0, 255);
 
@@ -138,7 +138,7 @@ std::string lowercase(std::string value) {
     return value;
 }
 
-std::string analyticsProtocolName(XLinkProtocol_t protocol) {
+std::string telemetryProtocolName(XLinkProtocol_t protocol) {
     switch(protocol) {
         case X_LINK_USB_VSC:
         case X_LINK_USB_CDC:
@@ -158,7 +158,7 @@ std::string analyticsProtocolName(XLinkProtocol_t protocol) {
     }
 }
 
-std::string analyticsProtocolSpeed(XLinkProtocol_t protocol, dai::UsbSpeed speed) {
+std::string telemetryProtocolSpeed(XLinkProtocol_t protocol, dai::UsbSpeed speed) {
     if(protocol == X_LINK_USB_VSC || protocol == X_LINK_USB_CDC || protocol == X_LINK_USB_EP) {
         switch(speed) {
             case dai::UsbSpeed::SUPER:
@@ -577,22 +577,22 @@ DeviceBase::DeviceBase(Config config, const DeviceInfo& devInfo) : deviceInfo(de
 void DeviceBase::close() {
     std::unique_lock<std::mutex> lock(closedMtx);
     if(!closed) {
-        if(analyticsLifecycleStarted) {
+        if(telemetryLifecycleStarted) {
             // Match the shutdown behavior of the other long-lived XLink threads:
             // request stop now, but only join after closeImpl() closes the
             // connection and unblocks any blocking XLink reads.
-            analyticsEventRunning = false;
-            analyticsPingRunning = false;
-            analyticsPingCondVar.notify_all();
+            telemetryEventRunning = false;
+            telemetryPingRunning = false;
+            telemetryPingCondVar.notify_all();
         }
         closeImpl();
-        stopAnalyticsLifecycle();
+        stopTelemetryLifecycle();
         closed = true;
     }
 }
 
-void DeviceBase::emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann::json properties) {
-    if(!isAnalyticsEnabled()) {
+void DeviceBase::emitDeviceTelemetryEvent(const std::string& eventName, nlohmann::json properties) {
+    if(!isTelemetryEnabled()) {
         return;
     }
 
@@ -600,76 +600,76 @@ void DeviceBase::emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann
         if(!properties.is_object()) {
             properties = nlohmann::json::object();
         }
-        if(!anonymousAnalyticsId.empty()) {
-            properties["__analytics_distinct_id"] = anonymousAnalyticsId;
-            properties["anonymous_analytics_id"] = anonymousAnalyticsId;
+        if(!anonymousTelemetryId.empty()) {
+            properties["__telemetry_distinct_id"] = anonymousTelemetryId;
+            properties["anonymous_telemetry_id"] = anonymousTelemetryId;
         }
-        properties["host_id"] = utility::getTemporaryHostId();
-        properties["session_id"] = getAnalyticsSessionId();
-        properties["$session_id"] = getAnalyticsSessionId();
-        properties["device_id"] = utility::getTemporaryDeviceId(deviceInfo.getDeviceId());
+        properties["host_id"] = utility::getTemporaryTelemetryHostId();
+        properties["session_id"] = getTelemetrySessionId();
+        properties["$session_id"] = getTelemetrySessionId();
+        properties["device_id"] = utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
         if(eventName == "device_constructor") {
             properties["device_model"] = lowercase(getProductName());
             properties["platform"] = lowercase(getPlatformAsString());
-            properties["protocol"] = analyticsProtocolName(deviceInfo.protocol);
-            properties["protocol_speed"] = analyticsProtocolSpeed(deviceInfo.protocol, getUsbSpeed());
+            properties["protocol"] = telemetryProtocolName(deviceInfo.protocol);
+            properties["protocol_speed"] = telemetryProtocolSpeed(deviceInfo.protocol, getUsbSpeed());
         }
-        analyticsInstance().event(eventName, std::move(properties));
+        telemetryInstance().event(eventName, std::move(properties));
     } catch(const std::exception& ex) {
-        logger::debug("Analytics event '{}' failed: {}", eventName, ex.what());
+        logger::debug("Telemetry event '{}' failed: {}", eventName, ex.what());
     }
 }
 
-void DeviceBase::startAnalyticsSession() {
-    std::lock_guard<std::mutex> lock(analyticsSessionMtx);
-    analyticsSessionId = generateAnalyticsSessionId();
+void DeviceBase::startTelemetrySession() {
+    std::lock_guard<std::mutex> lock(telemetrySessionMtx);
+    telemetrySessionId = generateTelemetrySessionId();
 }
 
-void DeviceBase::endAnalyticsSession() {
-    std::lock_guard<std::mutex> lock(analyticsSessionMtx);
-    analyticsSessionId.clear();
+void DeviceBase::endTelemetrySession() {
+    std::lock_guard<std::mutex> lock(telemetrySessionMtx);
+    telemetrySessionId.clear();
 }
 
-std::string DeviceBase::getAnalyticsSessionId() const {
-    std::lock_guard<std::mutex> lock(analyticsSessionMtx);
+std::string DeviceBase::getTelemetrySessionId() const {
+    std::lock_guard<std::mutex> lock(telemetrySessionMtx);
 
-    if(analyticsSessionId.empty()) {
-        analyticsSessionId = generateAnalyticsSessionId();
+    if(telemetrySessionId.empty()) {
+        telemetrySessionId = generateTelemetrySessionId();
     }
 
-    return analyticsSessionId;
+    return telemetrySessionId;
 }
 
-std::string DeviceBase::fetchAnonymousAnalyticsId() {
-    if(!anonymousAnalyticsId.empty()) {
-        return anonymousAnalyticsId;
+std::string DeviceBase::fetchAnonymousTelemetryId() {
+    if(!anonymousTelemetryId.empty()) {
+        return anonymousTelemetryId;
     }
 
-    if(!isAnalyticsEnabled()) {
+    if(!isTelemetryEnabled()) {
         return "";
     }
 
     try {
-        anonymousAnalyticsId = pimpl->rpcCallChecked<std::string>("getAnonymousAnalyticsId");
+        anonymousTelemetryId = pimpl->rpcCallChecked<std::string>("getAnonymousTelemetryId");
     } catch(const std::exception& ex) {
-        pimpl->logger.debug("Failed to fetch anonymous analytics id: {}", ex.what());
+        pimpl->logger.debug("Failed to fetch anonymous telemetry id: {}", ex.what());
     }
 
-    return anonymousAnalyticsId;
+    return anonymousTelemetryId;
 }
 
-void DeviceBase::analyticsEventLoop() {
-    while(analyticsEventRunning) {
+void DeviceBase::telemetryEventLoop() {
+    while(telemetryEventRunning) {
         try {
-            auto stream = std::make_shared<XLinkStream>(connection, device::XLINK_CHANNEL_ANALYTICS, device::XLINK_USB_BUFFER_MAX_SIZE);
+            auto stream = std::make_shared<XLinkStream>(connection, device::XLINK_CHANNEL_TELEMETRY, device::XLINK_USB_BUFFER_MAX_SIZE);
             {
-                std::lock_guard<std::mutex> lock(analyticsEventStreamMtx);
-                analyticsEventStream = stream;
+                std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
+                telemetryEventStream = stream;
             }
-            while(analyticsEventRunning) {
+            while(telemetryEventRunning) {
                 std::vector<std::uint8_t> data;
                 stream->read(data);
-                if(!analyticsEventRunning) break;
+                if(!telemetryEventRunning) break;
 
                 try {
                     auto payload = nlohmann::json::parse(data.begin(), data.end());
@@ -682,82 +682,82 @@ void DeviceBase::analyticsEventLoop() {
                     if(!properties.is_object()) {
                         properties = nlohmann::json::object();
                     }
-                    emitDeviceAnalyticsEvent(eventName, std::move(properties));
+                    emitDeviceTelemetryEvent(eventName, std::move(properties));
                 } catch(const std::exception& ex) {
-                    pimpl->logger.debug("Failed to parse analytics event from device: {}", ex.what());
+                    pimpl->logger.debug("Failed to parse telemetry event from device: {}", ex.what());
                 }
             }
             {
-                std::lock_guard<std::mutex> lock(analyticsEventStreamMtx);
-                if(analyticsEventStream == stream) analyticsEventStream.reset();
+                std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
+                if(telemetryEventStream == stream) telemetryEventStream.reset();
             }
         } catch(const std::exception& ex) {
             {
-                std::lock_guard<std::mutex> lock(analyticsEventStreamMtx);
-                analyticsEventStream.reset();
+                std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
+                telemetryEventStream.reset();
             }
-            if(analyticsEventRunning) {
-                pimpl->logger.debug("Analytics event thread exception caught: {}", ex.what());
+            if(telemetryEventRunning) {
+                pimpl->logger.debug("Telemetry event thread exception caught: {}", ex.what());
             }
         }
     }
 }
 
-void DeviceBase::analyticsPingLoop() {
+void DeviceBase::telemetryPingLoop() {
     using namespace std::chrono_literals;
 
-    std::unique_lock<std::mutex> lock(analyticsPingMtx);
-    while(analyticsPingRunning) {
-        if(analyticsPingCondVar.wait_for(lock, 20s, [this]() { return !analyticsPingRunning.load(); })) {
+    std::unique_lock<std::mutex> lock(telemetryPingMtx);
+    while(telemetryPingRunning) {
+        if(telemetryPingCondVar.wait_for(lock, 20s, [this]() { return !telemetryPingRunning.load(); })) {
             break;
         }
 
         lock.unlock();
-        emitDeviceAnalyticsEvent("ping");
+        emitDeviceTelemetryEvent("ping");
         lock.lock();
     }
 }
 
-void DeviceBase::startAnalyticsLifecycle(bool reconnect) {
-    if(reconnect || dumpOnly || analyticsLifecycleStarted || !isAnalyticsEnabled()) {
+void DeviceBase::startTelemetryLifecycle(bool reconnect) {
+    if(reconnect || dumpOnly || telemetryLifecycleStarted || !isTelemetryEnabled()) {
         return;
     }
 
-    analyticsCreatedAt = std::chrono::steady_clock::now();
-    fetchAnonymousAnalyticsId();
-    analyticsLifecycleStarted = true;
-    startAnalyticsSession();
-    emitDeviceAnalyticsEvent("device_constructor");
+    telemetryCreatedAt = std::chrono::steady_clock::now();
+    fetchAnonymousTelemetryId();
+    telemetryLifecycleStarted = true;
+    startTelemetrySession();
+    emitDeviceTelemetryEvent("device_constructor");
 
-    analyticsEventRunning = true;
-    analyticsEventThread = std::thread(&DeviceBase::analyticsEventLoop, this);
-    analyticsPingRunning = true;
-    analyticsPingThread = std::thread(&DeviceBase::analyticsPingLoop, this);
+    telemetryEventRunning = true;
+    telemetryEventThread = std::thread(&DeviceBase::telemetryEventLoop, this);
+    telemetryPingRunning = true;
+    telemetryPingThread = std::thread(&DeviceBase::telemetryPingLoop, this);
 }
 
-void DeviceBase::stopAnalyticsLifecycle() {
-    if(!analyticsLifecycleStarted) {
+void DeviceBase::stopTelemetryLifecycle() {
+    if(!telemetryLifecycleStarted) {
         return;
     }
 
-    analyticsEventRunning = false;
+    telemetryEventRunning = false;
     {
-        std::lock_guard<std::mutex> lock(analyticsEventStreamMtx);
-        if(analyticsEventStream) analyticsEventStream->close();
+        std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
+        if(telemetryEventStream) telemetryEventStream->close();
     }
-    if(analyticsEventThread.joinable()) {
-        analyticsEventThread.join();
+    if(telemetryEventThread.joinable()) {
+        telemetryEventThread.join();
     }
-    analyticsPingRunning = false;
-    analyticsPingCondVar.notify_all();
-    if(analyticsPingThread.joinable()) {
-        analyticsPingThread.join();
+    telemetryPingRunning = false;
+    telemetryPingCondVar.notify_all();
+    if(telemetryPingThread.joinable()) {
+        telemetryPingThread.join();
     }
 
-    const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - analyticsCreatedAt).count();
-    emitDeviceAnalyticsEvent("device_destructor", nlohmann::json{{"duration_ms", durationMs}});
-    endAnalyticsSession();
-    analyticsLifecycleStarted = false;
+    const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - telemetryCreatedAt).count();
+    emitDeviceTelemetryEvent("device_destructor", nlohmann::json{{"duration_ms", durationMs}});
+    endTelemetrySession();
+    telemetryLifecycleStarted = false;
 }
 
 unsigned int getCrashdumpTimeout(XLinkProtocol_t protocol) {
@@ -1455,7 +1455,7 @@ void DeviceBase::init2(Config cfg, const std::filesystem::path& pathToMvcmd, boo
             // Starts and waits for initial timesync
             setTimesync(DEFAULT_TIMESYNC_PERIOD, DEFAULT_TIMESYNC_NUM_SAMPLES, DEFAULT_TIMESYNC_RANDOM);
             pimpl->rpcCallCheckedVoid("onInit");
-            startAnalyticsLifecycle(reconnect);
+            startTelemetryLifecycle(reconnect);
         } catch(const std::exception&) {
             // close device (cleanup)
             close();
@@ -2309,7 +2309,7 @@ bool DeviceBase::startPipelineImpl(const Pipeline& pipeline) {
     std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>("buildPipeline");
     if(success) {
         pimpl->rpcCallCheckedVoid("startPipeline");
-        emitDeviceAnalyticsEvent("pipeline_start",
+        emitDeviceTelemetryEvent("pipeline_start",
                                  nlohmann::json{
                                      {"host_only", false},
                                      {"node_count", schema.nodes.size()},

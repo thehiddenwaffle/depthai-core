@@ -1042,15 +1042,15 @@ class DeviceBase {
     // private functions
     void init2(Config cfg, const std::filesystem::path& pathToMvcmd, bool hasPipeline, bool reconnect = false);
     void tryGetDevice();
-    void startAnalyticsLifecycle(bool reconnect);
-    void stopAnalyticsLifecycle();
-    void emitDeviceAnalyticsEvent(const std::string& eventName, nlohmann::json properties = {});
-    std::string fetchAnonymousAnalyticsId();
-    void analyticsEventLoop();
-    void analyticsPingLoop();
-    void startAnalyticsSession();
-    void endAnalyticsSession();
-    std::string getAnalyticsSessionId() const;
+    void startTelemetryLifecycle(bool reconnect);
+    void stopTelemetryLifecycle();
+    void emitDeviceTelemetryEvent(const std::string& eventName, nlohmann::json properties = {});
+    std::string fetchAnonymousTelemetryId();
+    void telemetryEventLoop();
+    void telemetryPingLoop();
+    void startTelemetrySession();
+    void endTelemetrySession();
+    std::string getTelemetrySessionId() const;
     struct PrevInfo {
         DeviceInfo deviceInfo;
         Config cfg;
@@ -1118,20 +1118,20 @@ class DeviceBase {
     std::filesystem::path firmwarePath;
     bool dumpOnly = false;
 
-    // Analytics
-    std::thread analyticsEventThread;
-    std::atomic<bool> analyticsEventRunning{false};
-    std::mutex analyticsEventStreamMtx;
-    std::shared_ptr<XLinkStream> analyticsEventStream;
-    std::thread analyticsPingThread;
-    std::atomic<bool> analyticsPingRunning{false};
-    std::condition_variable analyticsPingCondVar;
-    std::mutex analyticsPingMtx;
-    std::string anonymousAnalyticsId;
-    mutable std::mutex analyticsSessionMtx;
-    mutable std::string analyticsSessionId;
-    std::chrono::steady_clock::time_point analyticsCreatedAt;
-    bool analyticsLifecycleStarted = false;
+    // Telemetry
+    std::thread telemetryEventThread;
+    std::atomic<bool> telemetryEventRunning{false};
+    std::mutex telemetryEventStreamMtx;
+    std::shared_ptr<XLinkStream> telemetryEventStream;
+    std::thread telemetryPingThread;
+    std::atomic<bool> telemetryPingRunning{false};
+    std::condition_variable telemetryPingCondVar;
+    std::mutex telemetryPingMtx;
+    std::string anonymousTelemetryId;
+    mutable std::mutex telemetrySessionMtx;
+    mutable std::string telemetrySessionId;
+    std::chrono::steady_clock::time_point telemetryCreatedAt;
+    bool telemetryLifecycleStarted = false;
 
     // Started pipeline
     std::optional<PipelineSchema> pipelineSchema;
