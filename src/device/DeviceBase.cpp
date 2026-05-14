@@ -1926,14 +1926,11 @@ void DeviceBase::factoryResetCalibration(CameraBoardSocket camSocket) {
 }
 
 std::vector<std::uint8_t> DeviceBase::readCalibrationRaw() {
-    return readCalibrationRaw(CameraBoardSocket::AUTO);
-}
-
-std::vector<std::uint8_t> DeviceBase::readCalibrationRaw(CameraBoardSocket camSocket) {
     bool success;
     std::string errorMsg;
     std::vector<uint8_t> eepromDataRaw;
-    std::tie(success, errorMsg, eepromDataRaw) = pimpl->rpcCallChecked<std::tuple<bool, std::string, std::vector<uint8_t>>>("readFromEepromRaw", camSocket);
+    std::tie(success, errorMsg, eepromDataRaw) =
+        pimpl->rpcCallChecked<std::tuple<bool, std::string, std::vector<uint8_t>>>("readFromEepromRaw", CameraBoardSocket::AUTO);
     if(!success) {
         throw EepromError(errorMsg);
     }
@@ -1962,15 +1959,11 @@ void DeviceBase::writeCcmEepromRaw(CameraBoardSocket socket, std::vector<uint8_t
 }
 
 std::vector<std::uint8_t> DeviceBase::readFactoryCalibrationRaw() {
-    return readFactoryCalibrationRaw(CameraBoardSocket::AUTO);
-}
-
-std::vector<std::uint8_t> DeviceBase::readFactoryCalibrationRaw(CameraBoardSocket camSocket) {
     bool success;
     std::string errorMsg;
     std::vector<uint8_t> eepromDataRaw;
     std::tie(success, errorMsg, eepromDataRaw) =
-        pimpl->rpcCallChecked<std::tuple<bool, std::string, std::vector<uint8_t>>>("readFromEepromFactoryRaw", camSocket);
+        pimpl->rpcCallChecked<std::tuple<bool, std::string, std::vector<uint8_t>>>("readFromEepromFactoryRaw", CameraBoardSocket::AUTO);
     if(!success) {
         throw EepromError(errorMsg);
     }

@@ -861,18 +861,6 @@ void DeviceBindings::bind(pybind11::module& m, void* pCallstack) {
             },
             DOC(dai, DeviceBase, readCalibrationRaw))
         .def(
-            "readCalibrationRaw",
-            [](DeviceBase& d, dai::CameraBoardSocket camSocket) {
-                std::vector<uint8_t> data;
-                {
-                    py::gil_scoped_release release;
-                    data = d.readCalibrationRaw(camSocket);
-                }
-                return py::bytes(reinterpret_cast<const char*>(data.data()), data.size());
-            },
-            py::arg("camSocket"),
-            DOC(dai, DeviceBase, readCalibrationRaw, 2))
-        .def(
             "readFactoryCalibrationRaw",
             [](DeviceBase& d) {
                 std::vector<uint8_t> data;
@@ -883,18 +871,6 @@ void DeviceBindings::bind(pybind11::module& m, void* pCallstack) {
                 return py::bytes(reinterpret_cast<const char*>(data.data()), data.size());
             },
             DOC(dai, DeviceBase, readFactoryCalibrationRaw))
-        .def(
-            "readFactoryCalibrationRaw",
-            [](DeviceBase& d, dai::CameraBoardSocket camSocket) {
-                std::vector<uint8_t> data;
-                {
-                    py::gil_scoped_release release;
-                    data = d.readFactoryCalibrationRaw(camSocket);
-                }
-                return py::bytes(reinterpret_cast<const char*>(data.data()), data.size());
-            },
-            py::arg("camSocket"),
-            DOC(dai, DeviceBase, readFactoryCalibrationRaw, 2))
         .def(
             "readCcmEepromRaw",
             [](DeviceBase& d, CameraBoardSocket s, int sz, int o) {

@@ -957,32 +957,12 @@ class DeviceBase {
     std::vector<std::uint8_t> readCalibrationRaw();
 
     /**
-     * Fetches the raw CBA EEPROM data from User area
-     *
-     * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
-     *
-     * @throws std::runtime_exception if any error occurred
-     * @returns Binary dump of User area EEPROM data
-     */
-    std::vector<std::uint8_t> readCalibrationRaw(CameraBoardSocket camSocket);
-
-    /**
      * Fetches the raw EEPROM data from Factory area
      *
      * @throws std::runtime_error if any error occurred
      * @returns Binary dump of Factory area EEPROM data
      */
     std::vector<std::uint8_t> readFactoryCalibrationRaw();
-
-    /**
-     * Fetches the raw CBA EEPROM data from Factory area
-     *
-     * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
-     *
-     * @throws std::runtime_exception if any error occurred
-     * @returns Binary dump of Factory area EEPROM data
-     */
-    std::vector<std::uint8_t> readFactoryCalibrationRaw(CameraBoardSocket camSocket);
 
     /**
      * Fetches the raw EEPROM data from the specified CCM (compact camera module).

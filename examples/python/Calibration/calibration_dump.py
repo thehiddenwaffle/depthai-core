@@ -42,8 +42,3 @@ for cam in camera_sockets:
             print(f'[{cam.name}] Factory calibration: {json.dumps(device.readFactoryCalibration(cam).eepromToJson(), indent=2)}')
         except Exception as ex:
             print(f'[{cam.name}] No factory calibration: {ex}')
-
-        print(f'\n[{cam.name}] User calibration raw: {device.readCalibrationRaw(cam).hex(" ")}')
-        print(f'\n[{cam.name}] Factory calibration raw: {device.readFactoryCalibrationRaw(cam).hex(" ")}')
-
-
