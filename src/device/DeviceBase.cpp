@@ -659,42 +659,45 @@ std::string DeviceBase::fetchAnonymousTelemetryId() {
 }
 
 void DeviceBase::telemetryEventLoop() {
+    using namespace std::chrono_literals;
+
     while(telemetryEventRunning) {
+        std::shared_ptr<XLinkStream> stream;
+        {
+            std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
+            stream = telemetryEventStream;
+        }
+        if(!stream) {
+            std::this_thread::sleep_for(50ms);
+            continue;
+        }
+
         try {
-            auto stream = std::make_shared<XLinkStream>(connection, device::XLINK_CHANNEL_TELEMETRY, device::XLINK_USB_BUFFER_MAX_SIZE);
-            {
-                std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
-                telemetryEventStream = stream;
-            }
-            while(telemetryEventRunning) {
-                std::vector<std::uint8_t> data;
-                stream->read(data);
-                if(!telemetryEventRunning) break;
+            std::vector<std::uint8_t> data;
+            stream->read(data);
+            if(!telemetryEventRunning) break;
 
-                try {
-                    auto payload = nlohmann::json::parse(data.begin(), data.end());
-                    if(!payload.is_object()) {
-                        continue;
-                    }
-
-                    auto eventName = payload.value("event", std::string{});
-                    auto properties = payload.value("properties", nlohmann::json::object());
-                    if(!properties.is_object()) {
-                        properties = nlohmann::json::object();
-                    }
-                    emitDeviceTelemetryEvent(eventName, std::move(properties));
-                } catch(const std::exception& ex) {
-                    pimpl->logger.debug("Failed to parse telemetry event from device: {}", ex.what());
+            try {
+                auto payload = nlohmann::json::parse(data.begin(), data.end());
+                if(!payload.is_object()) {
+                    continue;
                 }
-            }
-            {
-                std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
-                if(telemetryEventStream == stream) telemetryEventStream.reset();
+
+                auto eventName = payload.value("event", std::string{});
+                auto properties = payload.value("properties", nlohmann::json::object());
+                if(!properties.is_object()) {
+                    properties = nlohmann::json::object();
+                }
+                emitDeviceTelemetryEvent(eventName, std::move(properties));
+            } catch(const std::exception& ex) {
+                pimpl->logger.debug("Failed to parse telemetry event from device: {}", ex.what());
             }
         } catch(const std::exception& ex) {
             {
                 std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
-                telemetryEventStream.reset();
+                if(telemetryEventStream == stream) {
+                    telemetryEventStream.reset();
+                }
             }
             if(telemetryEventRunning) {
                 pimpl->logger.debug("Telemetry event thread exception caught: {}", ex.what());
@@ -979,6 +982,10 @@ void DeviceBase::closeImpl() {
     // Close rpcStream
     pimpl->rpcStream = nullptr;
     pimpl->rpcClient = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
+        telemetryEventStream = nullptr;
+    }
 
     if(!dumpOnly) {
         // Get crash dump if needed
@@ -1245,6 +1252,10 @@ void DeviceBase::init2(Config cfg, const std::filesystem::path& pathToMvcmd, boo
 
     // prepare rpc for both attached and host controlled mode
     pimpl->rpcStream = std::make_shared<XLinkStream>(connection, device::XLINK_CHANNEL_MAIN_RPC, device::XLINK_USB_BUFFER_MAX_SIZE);
+    {
+        std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
+        telemetryEventStream = std::make_shared<XLinkStream>(connection, device::XLINK_CHANNEL_TELEMETRY, device::XLINK_USB_BUFFER_MAX_SIZE);
+    }
     auto rpcStream = pimpl->rpcStream;
 
     pimpl->rpcClient = std::make_unique<nanorpc::core::client<nanorpc::packer::nlohmann_msgpack>>([this, rpcStream](nanorpc::core::type::buffer request) {
