@@ -444,6 +444,8 @@ class DeviceBase {
      */
     std::string getDeviceId();
 
+    std::string getTemporaryTelemetryDeviceId() const;
+
     /**
      * Sets logging level which decides printing level to standard output.
      * If lower than setLogLevel, no messages will be printed
@@ -1045,12 +1047,8 @@ class DeviceBase {
     void startTelemetryLifecycle(bool reconnect);
     void stopTelemetryLifecycle();
     void emitDeviceTelemetryEvent(const std::string& eventName, nlohmann::json properties = {});
-    std::string fetchAnonymousTelemetryId();
     void telemetryEventLoop();
     void telemetryPingLoop();
-    void startTelemetrySession();
-    void endTelemetrySession();
-    std::string getTelemetrySessionId() const;
     struct PrevInfo {
         DeviceInfo deviceInfo;
         Config cfg;
@@ -1127,9 +1125,7 @@ class DeviceBase {
     std::atomic<bool> telemetryPingRunning{false};
     std::condition_variable telemetryPingCondVar;
     std::mutex telemetryPingMtx;
-    std::string anonymousTelemetryId;
-    mutable std::mutex telemetrySessionMtx;
-    mutable std::string telemetrySessionId;
+    std::string tmpDeviceId;
     std::chrono::steady_clock::time_point telemetryCreatedAt;
     bool telemetryLifecycleStarted = false;
 

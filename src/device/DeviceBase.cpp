@@ -35,7 +35,6 @@
 #include "depthai/device/EepromError.hpp"
 #include "depthai/pipeline/node/internal/XLinkIn.hpp"
 #include "depthai/pipeline/node/internal/XLinkOut.hpp"
-#include "depthai/utility/Telemetry.hpp"
 #include "device/DeviceGate.hpp"
 #include "pipeline/Pipeline.hpp"
 #include "properties/GlobalProperties.hpp"
@@ -61,6 +60,7 @@
 #include "spdlog/spdlog.h"
 #include "utility/LogCollection.hpp"
 #include "utility/Logging.hpp"
+#include "utility/Telemetry.hpp"
 
 namespace {
 
@@ -91,45 +91,8 @@ bool isDebuggerEnabled() {
     return dai::utility::getEnvAs<bool>("DEPTHAI_DEBUGGER", false);
 }
 
-dai::utility::Telemetry& telemetryInstance() {
-    return dai::utility::Telemetry::getInstance();
-}
-
 bool isTelemetryEnabled() {
     return dai::utility::getEnvAs<bool>("DEPTHAI_TELEMETRY", true, false);
-}
-
-std::string generateTelemetrySessionId() {
-    static std::mt19937_64 generator(std::random_device{}());
-    static std::uniform_int_distribution<int> distribution(0, 255);
-
-    std::array<std::uint8_t, 16> bytes{};
-    const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
-    // UUIDv7: first 48 bits are Unix epoch milliseconds in big-endian order.
-    bytes[0] = static_cast<std::uint8_t>((nowMs >> 40) & 0xFF);
-    bytes[1] = static_cast<std::uint8_t>((nowMs >> 32) & 0xFF);
-    bytes[2] = static_cast<std::uint8_t>((nowMs >> 24) & 0xFF);
-    bytes[3] = static_cast<std::uint8_t>((nowMs >> 16) & 0xFF);
-    bytes[4] = static_cast<std::uint8_t>((nowMs >> 8) & 0xFF);
-    bytes[5] = static_cast<std::uint8_t>(nowMs & 0xFF);
-
-    for(std::size_t index = 6; index < bytes.size(); ++index) {
-        bytes[index] = static_cast<std::uint8_t>(distribution(generator));
-    }
-
-    bytes[6] = static_cast<std::uint8_t>((bytes[6] & 0x0F) | 0x70);
-    bytes[8] = static_cast<std::uint8_t>((bytes[8] & 0x3F) | 0x80);
-
-    std::ostringstream stream;
-    stream << std::hex << std::setfill('0');
-    for(std::size_t index = 0; index < bytes.size(); ++index) {
-        stream << std::setw(2) << static_cast<int>(bytes[index]);
-        if(index == 3 || index == 5 || index == 7 || index == 9) {
-            stream << '-';
-        }
-    }
-    return stream.str();
 }
 
 std::string lowercase(std::string value) {
@@ -599,62 +562,17 @@ void DeviceBase::emitDeviceTelemetryEvent(const std::string& eventName, nlohmann
         if(!properties.is_object()) {
             properties = nlohmann::json::object();
         }
-        if(!anonymousTelemetryId.empty()) {
-            properties["__telemetry_distinct_id"] = anonymousTelemetryId;
-            properties["anonymous_telemetry_id"] = anonymousTelemetryId;
-        }
-        properties["host_id"] = utility::getTemporaryTelemetryHostId();
-        properties["session_id"] = getTelemetrySessionId();
-        properties["$session_id"] = getTelemetrySessionId();
-        properties["device_id"] = utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
+        properties["session_id"] = utility::getTelemetrySessionId();
         if(eventName == "device_constructor") {
             properties["device_model"] = lowercase(getProductName());
             properties["platform"] = lowercase(getPlatformAsString());
             properties["protocol"] = telemetryProtocolName(deviceInfo.protocol);
             properties["protocol_speed"] = telemetryProtocolSpeed(deviceInfo.protocol, getUsbSpeed());
         }
-        telemetryInstance().event(eventName, std::move(properties));
+        dai::utility::Telemetry::getInstance().event(*this, eventName, std::move(properties));
     } catch(const std::exception& ex) {
         logger::debug("Telemetry event '{}' failed: {}", eventName, ex.what());
     }
-}
-
-void DeviceBase::startTelemetrySession() {
-    std::lock_guard<std::mutex> lock(telemetrySessionMtx);
-    telemetrySessionId = generateTelemetrySessionId();
-}
-
-void DeviceBase::endTelemetrySession() {
-    std::lock_guard<std::mutex> lock(telemetrySessionMtx);
-    telemetrySessionId.clear();
-}
-
-std::string DeviceBase::getTelemetrySessionId() const {
-    std::lock_guard<std::mutex> lock(telemetrySessionMtx);
-
-    if(telemetrySessionId.empty()) {
-        telemetrySessionId = generateTelemetrySessionId();
-    }
-
-    return telemetrySessionId;
-}
-
-std::string DeviceBase::fetchAnonymousTelemetryId() {
-    if(!anonymousTelemetryId.empty()) {
-        return anonymousTelemetryId;
-    }
-
-    if(!isTelemetryEnabled()) {
-        return "";
-    }
-
-    try {
-        anonymousTelemetryId = pimpl->rpcCallChecked<std::string>("getAnonymousTelemetryId");
-    } catch(const std::exception& ex) {
-        pimpl->logger.debug("Failed to fetch anonymous telemetry id: {}", ex.what());
-    }
-
-    return anonymousTelemetryId;
 }
 
 void DeviceBase::telemetryEventLoop() {
@@ -726,9 +644,8 @@ void DeviceBase::startTelemetryLifecycle(bool reconnect) {
     }
 
     telemetryCreatedAt = std::chrono::steady_clock::now();
-    fetchAnonymousTelemetryId();
+    tmpDeviceId = utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
     telemetryLifecycleStarted = true;
-    startTelemetrySession();
     emitDeviceTelemetryEvent("device_constructor");
 
     telemetryEventRunning = true;
@@ -758,7 +675,6 @@ void DeviceBase::stopTelemetryLifecycle() {
 
     const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - telemetryCreatedAt).count();
     emitDeviceTelemetryEvent("device_destructor", nlohmann::json{{"duration_ms", durationMs}});
-    endTelemetrySession();
     telemetryLifecycleStarted = false;
 }
 
@@ -1606,6 +1522,13 @@ std::string DeviceBase::getMxId() {
 
 std::string DeviceBase::getDeviceId() {
     return pimpl->rpcCallChecked<std::string>("getMxId");
+}
+
+std::string DeviceBase::getTemporaryTelemetryDeviceId() const {
+    if(!tmpDeviceId.empty()) {
+        return tmpDeviceId;
+    }
+    return utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
 }
 
 std::vector<CameraBoardSocket> DeviceBase::getConnectedCameras() {

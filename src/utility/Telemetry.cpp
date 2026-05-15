@@ -1,4 +1,4 @@
-#include "depthai/utility/Telemetry.hpp"
+#include "utility/Telemetry.hpp"
 
 #include <algorithm>
 #include <array>
@@ -23,6 +23,8 @@
 #include <vector>
 
 #include "build/version.hpp"
+#include "depthai/device/DeviceBase.hpp"
+#include "depthai/pipeline/Pipeline.hpp"
 #include "utility/Logging.hpp"
 #include "utility/Platform.hpp"
 
@@ -381,7 +383,6 @@ struct TelemetrySharedState {
     bool enabled{false};
     std::string apiKey;
     std::string captureUrl;
-    std::string distinctId;
     std::string sessionKey{generateUuidV7()};
 
     std::filesystem::path queueDir;
@@ -429,7 +430,6 @@ class Telemetry::Impl {
 TelemetrySharedState::TelemetrySharedState() {
     captureUrl = normalizeCaptureUrl(readEnv("DEPTHAI_TELEMETRY_URL"));
     apiKey = DEFAULT_POSTHOG_API_KEY;
-    distinctId = sessionKey;
     queueDir = defaultTelemetryBaseDir() / sessionKey;
 
     try {
@@ -484,14 +484,6 @@ void TelemetrySharedState::event(std::string eventName, nlohmann::json propertie
         properties = nlohmann::json::object();
     }
 
-    std::string eventDistinctId = distinctId;
-    if(properties.contains("__telemetry_distinct_id")) {
-        if(properties["__telemetry_distinct_id"].is_string()) {
-            eventDistinctId = properties["__telemetry_distinct_id"].get<std::string>();
-        }
-        properties.erase("__telemetry_distinct_id");
-    }
-
     if(!properties.contains("$lib")) {
         properties["$lib"] = "depthai-core";
     }
@@ -501,10 +493,15 @@ void TelemetrySharedState::event(std::string eventName, nlohmann::json propertie
     if(!properties.contains("$session_id")) {
         properties["$session_id"] = sessionKey;
     }
+    if(!properties.contains("$process_person_profile")) {
+        properties["$process_person_profile"] = false;
+    }
+
+    const auto hostId = getTemporaryTelemetryHostId();
 
     const auto payload = nlohmann::json{
         {"event", eventName},
-        {"distinct_id", eventDistinctId},
+        {"distinct_id", hostId},
         {"properties", std::move(properties)},
         {"timestamp", toIso8601(Clock::now())},
         {"uuid", generateUuidV4()},
@@ -672,11 +669,10 @@ void TelemetrySharedState::flushOneBatch() {
                 properties = nlohmann::json::object();
             }
 
-            properties["distinct_id"] = queuedEvent.value("distinct_id", distinctId);
-
             nlohmann::json requestBody = {
                 {"api_key", apiKey},
                 {"event", queuedEvent.value("event", "")},
+                {"distinct_id", queuedEvent.value("distinct_id", getTemporaryTelemetryHostId())},
                 {"properties", std::move(properties)},
             };
 
@@ -768,12 +764,49 @@ Telemetry::Telemetry() : impl(std::make_unique<Impl>()) {}
 
 Telemetry::~Telemetry() = default;
 
+namespace {
+
+void normalizeTelemetryProperties(nlohmann::json& properties) {
+    if(!properties.is_object()) {
+        logger::warn("Telemetry properties must be a JSON object. Dropping invalid properties.");
+        properties = nlohmann::json::object();
+    }
+    if(!properties.contains("$process_person_profile")) {
+        properties["$process_person_profile"] = false;
+    }
+}
+
+void addDeviceTelemetryProperties(const DeviceBase& device, nlohmann::json& properties) {
+    normalizeTelemetryProperties(properties);
+    if(!properties.contains("device_id")) {
+        properties["device_id"] = device.getTemporaryTelemetryDeviceId();
+    }
+}
+
+void addPipelineTelemetryProperties(const Pipeline& pipeline, nlohmann::json& properties) {
+    normalizeTelemetryProperties(properties);
+    if(!properties.contains("pipeline_id")) {
+        properties["pipeline_id"] = pipeline.getTelemetryPipelineId();
+    }
+    if(auto device = pipeline.getDefaultDevice()) {
+        if(!properties.contains("device_id")) {
+            properties["device_id"] = device->getTemporaryTelemetryDeviceId();
+        }
+    }
+}
+
+}  // namespace
+
 std::string getTemporaryTelemetryHostId() {
     return temporaryIdsManager().getHostId();
 }
 
 std::string getTemporaryTelemetryDeviceId(const std::string& mxid) {
     return temporaryIdsManager().getDeviceId(mxid);
+}
+
+std::string getTelemetrySessionId() {
+    return telemetrySharedState().sessionKey;
 }
 
 std::string getTelemetryHostOS() {
@@ -787,7 +820,6 @@ std::string getTelemetryHostOSVersion() {
 void emitDepthaiTelemetryLoadEvent() {
     Telemetry::getInstance().event("depthai_load",
                                    nlohmann::json{
-                                       {"host_id", getTemporaryTelemetryHostId()},
                                        {"session_id", telemetrySharedState().sessionKey},
                                        {"host_os", getTelemetryHostOS()},
                                        {"host_os_version", getTelemetryHostOSVersion()},
@@ -803,6 +835,37 @@ void Telemetry::event(std::string eventName, std::map<std::string, std::string> 
 }
 
 void Telemetry::event(std::string eventName, nlohmann::json properties) {
+    normalizeTelemetryProperties(properties);
+    if(impl) {
+        impl->event(std::move(eventName), std::move(properties));
+    }
+}
+
+void Telemetry::event(const DeviceBase& device, std::string eventName, std::map<std::string, std::string> properties) {
+    nlohmann::json jsonProperties = nlohmann::json::object();
+    for(auto& [key, value] : properties) {
+        jsonProperties[key] = value;
+    }
+    event(device, std::move(eventName), std::move(jsonProperties));
+}
+
+void Telemetry::event(const DeviceBase& device, std::string eventName, nlohmann::json properties) {
+    addDeviceTelemetryProperties(device, properties);
+    if(impl) {
+        impl->event(std::move(eventName), std::move(properties));
+    }
+}
+
+void Telemetry::event(const Pipeline& pipeline, std::string eventName, std::map<std::string, std::string> properties) {
+    nlohmann::json jsonProperties = nlohmann::json::object();
+    for(auto& [key, value] : properties) {
+        jsonProperties[key] = value;
+    }
+    event(pipeline, std::move(eventName), std::move(jsonProperties));
+}
+
+void Telemetry::event(const Pipeline& pipeline, std::string eventName, nlohmann::json properties) {
+    addPipelineTelemetryProperties(pipeline, properties);
     if(impl) {
         impl->event(std::move(eventName), std::move(properties));
     }

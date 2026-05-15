@@ -158,6 +158,7 @@ void expectCommonEventShape(const ReceivedRequest& request) {
     REQUIRE(request.body.is_object());
     REQUIRE_FALSE(request.body.value("api_key", std::string{}).empty());
     REQUIRE_FALSE(request.body.value("timestamp", std::string{}).empty());
+    REQUIRE_FALSE(request.body.value("distinct_id", std::string{}).empty());
 
     const auto properties = request.body.value("properties", Json::object());
     INFO("Telemetry properties: " << properties.dump());
@@ -165,7 +166,9 @@ void expectCommonEventShape(const ReceivedRequest& request) {
     REQUIRE(properties.value("$lib", std::string{}) == "depthai-core");
     REQUIRE_FALSE(properties.value("$lib_version", std::string{}).empty());
     REQUIRE_FALSE(properties.value("$session_id", std::string{}).empty());
-    REQUIRE_FALSE(properties.value("distinct_id", std::string{}).empty());
+    REQUIRE(properties.contains("$process_person_profile"));
+    REQUIRE(properties["$process_person_profile"].is_boolean());
+    REQUIRE_FALSE(properties["$process_person_profile"].get<bool>());
 }
 
 void expectIntegerProperty(const Json& value, const std::string& key) {
@@ -280,7 +283,6 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     CAPTURE(depthaiLoadRequests.size());
     REQUIRE(depthaiLoadRequests.size() == 1);
     const auto depthaiLoadProperties = depthaiLoadRequests.front().body["properties"];
-    REQUIRE_FALSE(depthaiLoadProperties.value("host_id", std::string{}).empty());
     REQUIRE_FALSE(depthaiLoadProperties.value("session_id", std::string{}).empty());
     REQUIRE((depthaiLoadProperties.value("host_os", std::string{}) == "windows" || depthaiLoadProperties.value("host_os", std::string{}) == "linux"
              || depthaiLoadProperties.value("host_os", std::string{}) == "mac" || depthaiLoadProperties.value("host_os", std::string{}) == "oakapp"));
@@ -295,7 +297,6 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
 
     for(const auto& request : deviceConstructorRequests) {
         const auto properties = request.body["properties"];
-        REQUIRE_FALSE(properties.value("host_id", std::string{}).empty());
         REQUIRE_FALSE(properties.value("session_id", std::string{}).empty());
         const auto deviceId = properties.value("device_id", std::string{});
         REQUIRE_FALSE(deviceId.empty());
@@ -370,6 +371,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         expectIntegerProperty(properties, "node_count");
         expectIntegerProperty(properties, "connection_count");
         expectIntegerProperty(properties, "bridge_count");
+        REQUIRE_FALSE(properties.value("pipeline_id", std::string{}).empty());
     });
 
     const auto pipelineStopDeviceIds = validatePipelineRequests("pipeline_stop", [&](const Json& properties) {
@@ -380,12 +382,12 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         expectIntegerProperty(properties, "connection_count");
         expectIntegerProperty(properties, "bridge_count");
         expectIntegerProperty(properties, "duration_ms");
+        REQUIRE_FALSE(properties.value("pipeline_id", std::string{}).empty());
     });
 
     REQUIRE(pipelineStartDeviceIds == pipelineStopDeviceIds);
 
     validateTelemetryDeviceRequests("device_destructor", [&](const Json& properties) {
-        REQUIRE_FALSE(properties.value("host_id", std::string{}).empty());
         REQUIRE_FALSE(properties.value("session_id", std::string{}).empty());
         expectIntegerProperty(properties, "duration_ms");
     });

@@ -7,11 +7,11 @@
 
 // project
 #include "build/version.hpp"
-#include "depthai/utility/Telemetry.hpp"
 #include "depthai/config/config.hpp"
 #include "utility/Environment.hpp"
 #include "utility/Logging.hpp"
 #include "utility/Resources.hpp"
+#include "utility/Telemetry.hpp"
 #include "utility/XLinkGlobalProfilingLogger.hpp"
 
 // libraries

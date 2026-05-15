@@ -2,6 +2,7 @@
 #pragma once
 
 // standard
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -86,6 +87,11 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
     std::vector<std::shared_ptr<Node>> getSourceNodes();
 
    private:
+    static std::string createTelemetryPipelineId() {
+        static std::atomic<std::uint64_t> nextId{0};
+        return std::to_string(nextId.fetch_add(1, std::memory_order_relaxed) + 1);
+    }
+
     // static functions
     static bool isSamePipeline(const Node::Output& out, const Node::Input& in);
     static bool canConnect(const Node::Output& out, const Node::Input& in);
@@ -166,6 +172,7 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
 
     // is pipeline running
     AtomicBool running{false};
+    std::string telemetryPipelineId{createTelemetryPipelineId()};
     std::optional<std::chrono::steady_clock::time_point> telemetryPipelineStartedAt;
 
     // was pipeline built
@@ -600,6 +607,13 @@ class Pipeline {
      */
     std::shared_ptr<Device> getDefaultDevice() {
         return impl()->defaultDevice;
+    }
+    std::shared_ptr<const Device> getDefaultDevice() const {
+        return impl()->defaultDevice;
+    }
+
+    std::string getTelemetryPipelineId() const {
+        return impl()->telemetryPipelineId;
     }
 
     void addTask(std::function<void()> task) {

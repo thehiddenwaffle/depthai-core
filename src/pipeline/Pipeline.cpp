@@ -10,7 +10,6 @@
 #include "depthai/pipeline/node/internal/XLinkInHost.hpp"
 #include "depthai/pipeline/node/internal/XLinkOut.hpp"
 #include "depthai/pipeline/node/internal/XLinkOutHost.hpp"
-#include "depthai/utility/Telemetry.hpp"
 #include "properties/GlobalProperties.hpp"
 #include "utility/Compression.hpp"
 #include "utility/Environment.hpp"
@@ -18,6 +17,7 @@
 #include "utility/HolisticRecordReplay.hpp"
 #include "utility/Logging.hpp"
 #include "utility/PipelineImplHelper.hpp"
+#include "utility/Telemetry.hpp"
 #include "utility/Platform.hpp"
 #include "utility/RecordReplayImpl.hpp"
 #include "utility/Serialization.hpp"
@@ -91,8 +91,7 @@ std::optional<PipelineAutoCalibrationMode> parseAutoCalibrationMode(std::string_
     return std::nullopt;
 }
 
-void emitPipelineStartedTelemetry(
-    const dai::PipelineSchema& schema, const std::string& anonymousTelemetryId, const std::string& deviceId, bool hostOnly) {
+void emitPipelineStartedTelemetry(const dai::Pipeline& pipeline, const dai::PipelineSchema& schema, bool hostOnly) {
     if(!dai::utility::getEnvAs<bool>("DEPTHAI_TELEMETRY", true, false)) {
         return;
     }
@@ -104,19 +103,10 @@ void emitPipelineStartedTelemetry(
         {"bridge_count", schema.bridges.size()},
     };
 
-    if(!anonymousTelemetryId.empty()) {
-        properties["__telemetry_distinct_id"] = anonymousTelemetryId;
-        properties["anonymous_telemetry_id"] = anonymousTelemetryId;
-    }
-    if(!deviceId.empty()) {
-        properties["device_id"] = deviceId;
-    }
-
-    dai::utility::Telemetry::getInstance().event("pipeline_start", std::move(properties));
+    dai::utility::Telemetry::getInstance().event(pipeline, "pipeline_start", std::move(properties));
 }
 
-void emitPipelineStoppedTelemetry(
-    const dai::PipelineSchema& schema, const std::string& anonymousTelemetryId, const std::string& deviceId, int64_t durationMs, bool hostOnly) {
+void emitPipelineStoppedTelemetry(const dai::Pipeline& pipeline, const dai::PipelineSchema& schema, int64_t durationMs, bool hostOnly) {
     if(!dai::utility::getEnvAs<bool>("DEPTHAI_TELEMETRY", true, false)) {
         return;
     }
@@ -129,15 +119,7 @@ void emitPipelineStoppedTelemetry(
         {"duration_ms", durationMs},
     };
 
-    if(!anonymousTelemetryId.empty()) {
-        properties["__telemetry_distinct_id"] = anonymousTelemetryId;
-        properties["anonymous_telemetry_id"] = anonymousTelemetryId;
-    }
-    if(!deviceId.empty()) {
-        properties["device_id"] = deviceId;
-    }
-
-    dai::utility::Telemetry::getInstance().event("pipeline_stop", std::move(properties));
+    dai::utility::Telemetry::getInstance().event(pipeline, "pipeline_stop", std::move(properties));
 }
 
 #ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
@@ -1176,10 +1158,7 @@ void PipelineImpl::start() {
 
     telemetryPipelineStartedAt = std::chrono::steady_clock::now();
 
-    emitPipelineStartedTelemetry(getPipelineSchema(SerializationType::JSON, false),
-                                 defaultDevice ? defaultDevice->anonymousTelemetryId : "",
-                                 defaultDevice ? defaultDevice->getDeviceId() : "",
-                                 isHostOnly());
+    emitPipelineStartedTelemetry(Pipeline(shared_from_this()), getPipelineSchema(SerializationType::JSON, false), isHostOnly());
 
     // Add pointer to the pipeline to the device
     if(defaultDevice) {
@@ -1250,11 +1229,7 @@ void PipelineImpl::stop() {
 
     if(telemetryPipelineStartedAt.has_value()) {
         const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *telemetryPipelineStartedAt).count();
-        emitPipelineStoppedTelemetry(getPipelineSchema(SerializationType::JSON, false),
-                                     defaultDevice ? defaultDevice->anonymousTelemetryId : "",
-                                     defaultDevice ? defaultDevice->getDeviceId() : "",
-                                     durationMs,
-                                     isHostOnly());
+        emitPipelineStoppedTelemetry(Pipeline(shared_from_this()), getPipelineSchema(SerializationType::JSON, false), durationMs, isHostOnly());
         telemetryPipelineStartedAt.reset();
     }
 
