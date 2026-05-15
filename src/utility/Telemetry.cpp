@@ -26,12 +26,6 @@
 #include "utility/Logging.hpp"
 #include "utility/Platform.hpp"
 
-#if defined(TARGET_DEVICE_RVC4)
-    #include <XLink/XLink.h>
-
-    #include "depthai/xlink/XLinkConstants.hpp"
-#endif
-
 #ifdef DEPTHAI_ENABLE_CURL
     #include <cpr/cpr.h>
 #endif
@@ -382,72 +376,6 @@ TemporaryIdsManager& temporaryIdsManager() {
 }
 
 }  // namespace
-
-#if defined(TARGET_DEVICE_RVC4)
-
-struct TelemetryDeviceSharedState {
-    std::mutex mutex;
-    streamId_t streamId{INVALID_STREAM_ID};
-    bool enabled{telemetryEnabledByDefault()};
-
-    ~TelemetryDeviceSharedState() {
-        std::lock_guard<std::mutex> lock(mutex);
-        if(streamId != INVALID_STREAM_ID) {
-            XLinkCloseStream(streamId);
-            streamId = INVALID_STREAM_ID;
-        }
-    }
-
-    void event(std::string eventName, nlohmann::json properties) {
-        if(!enabled) {
-            return;
-        }
-
-        eventName = trim(std::move(eventName));
-        if(eventName.empty()) {
-            return;
-        }
-
-        if(!properties.is_object()) {
-            properties = nlohmann::json::object();
-        }
-
-        const auto payload = nlohmann::json{
-            {"event", eventName},
-            {"properties", std::move(properties)},
-            {"timestamp", toIso8601(Clock::now())},
-        };
-        const auto serialized = payload.dump();
-
-        std::lock_guard<std::mutex> lock(mutex);
-        if(streamId == INVALID_STREAM_ID) {
-            streamId = XLinkOpenStream(0, device::XLINK_CHANNEL_TELEMETRY, static_cast<int>(std::max<std::size_t>(serialized.size(), 4096)));
-            if(streamId == INVALID_STREAM_ID) {
-                return;
-            }
-        }
-
-        const auto status = XLinkWriteData(streamId, reinterpret_cast<const std::uint8_t*>(serialized.data()), serialized.size());
-        if(status != X_LINK_SUCCESS) {
-            XLinkCloseStream(streamId);
-            streamId = INVALID_STREAM_ID;
-        }
-    }
-};
-
-TelemetryDeviceSharedState& telemetrySharedState() {
-    static TelemetryDeviceSharedState state;
-    return state;
-}
-
-class Telemetry::Impl {
-   public:
-    void event(std::string eventName, nlohmann::json properties) {
-        telemetrySharedState().event(std::move(eventName), std::move(properties));
-    }
-};
-
-#else
 
 struct TelemetrySharedState {
     bool enabled{false};
@@ -831,8 +759,6 @@ void TelemetrySharedState::cleanupRunDirectory() {
     }
 }
 
-#endif
-
 Telemetry::Telemetry() : impl(std::make_unique<Impl>()) {}
 
 Telemetry::~Telemetry() = default;
@@ -854,9 +780,6 @@ std::string getTelemetryHostOSVersion() {
 }
 
 void emitDepthaiTelemetryLoadEvent() {
-#if defined(TARGET_DEVICE_RVC4)
-    return;
-#else
     Telemetry telemetry;
     telemetry.event("depthai_load",
                     nlohmann::json{
@@ -865,7 +788,6 @@ void emitDepthaiTelemetryLoadEvent() {
                         {"host_os", getTelemetryHostOS()},
                         {"host_os_version", getTelemetryHostOSVersion()},
                     });
-#endif
 }
 
 void Telemetry::event(std::string eventName, std::map<std::string, std::string> properties) {
