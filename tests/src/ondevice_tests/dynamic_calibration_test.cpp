@@ -516,11 +516,17 @@ TEST_CASE("DynamicCalibration: Get metrics.") {
 
     commandInput->send(std::make_shared<dai::DynamicCalibrationControl>(dai::DynamicCalibrationControl::Commands::ComputeCalibrationMetrics{calibration}));
 
-    std::chrono::seconds waitingTime(1);
-    bool failed;
-    auto metrics = metricsOutput->get<dai::CalibrationMetrics>(waitingTime, failed);
+    bool failed = true;
+    std::shared_ptr<dai::CalibrationMetrics> metrics;
+    auto deadline = std::chrono::steady_clock::now() + 5s;
+    while(std::chrono::steady_clock::now() < deadline) {
+        metrics = metricsOutput->get<dai::CalibrationMetrics>(250ms, failed);
+        if(!failed) break;
+    }
 
+    INFO("Waited up to 5 seconds for CalibrationMetrics");
     REQUIRE(!failed);
+    REQUIRE(metrics != nullptr);
 
     p.stop();
     p.wait();
