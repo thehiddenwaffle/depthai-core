@@ -92,8 +92,7 @@ bool isDebuggerEnabled() {
 }
 
 dai::utility::Telemetry& telemetryInstance() {
-    static dai::utility::Telemetry telemetry;
-    return telemetry;
+    return dai::utility::Telemetry::getInstance();
 }
 
 bool isTelemetryEnabled() {

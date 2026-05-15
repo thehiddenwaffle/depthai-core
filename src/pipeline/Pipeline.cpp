@@ -97,7 +97,6 @@ void emitPipelineStartedTelemetry(
         return;
     }
 
-    static dai::utility::Telemetry telemetry;
     nlohmann::json properties = {
         {"host_only", hostOnly},
         {"node_count", schema.nodes.size()},
@@ -113,7 +112,7 @@ void emitPipelineStartedTelemetry(
         properties["device_id"] = deviceId;
     }
 
-    telemetry.event("pipeline_start", std::move(properties));
+    dai::utility::Telemetry::getInstance().event("pipeline_start", std::move(properties));
 }
 
 void emitPipelineStoppedTelemetry(
@@ -138,8 +137,7 @@ void emitPipelineStoppedTelemetry(
         properties["device_id"] = deviceId;
     }
 
-    static dai::utility::Telemetry telemetry;
-    telemetry.event("pipeline_stop", std::move(properties));
+    dai::utility::Telemetry::getInstance().event("pipeline_stop", std::move(properties));
 }
 
 #ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT

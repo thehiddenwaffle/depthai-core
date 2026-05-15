@@ -10,8 +10,7 @@ namespace utility {
 
 class Telemetry {
    public:
-    Telemetry();
-    ~Telemetry();
+    static Telemetry& getInstance();
 
     Telemetry(const Telemetry&) = delete;
     Telemetry& operator=(const Telemetry&) = delete;
@@ -32,6 +31,9 @@ class Telemetry {
     void event(std::string eventName, nlohmann::json properties);
 
    private:
+    Telemetry();
+    ~Telemetry();
+
     class Impl;
     std::unique_ptr<Impl> impl;
 };

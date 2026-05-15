@@ -759,6 +759,11 @@ void TelemetrySharedState::cleanupRunDirectory() {
     }
 }
 
+Telemetry& Telemetry::getInstance() {
+    static Telemetry telemetry;
+    return telemetry;
+}
+
 Telemetry::Telemetry() : impl(std::make_unique<Impl>()) {}
 
 Telemetry::~Telemetry() = default;
@@ -780,14 +785,13 @@ std::string getTelemetryHostOSVersion() {
 }
 
 void emitDepthaiTelemetryLoadEvent() {
-    Telemetry telemetry;
-    telemetry.event("depthai_load",
-                    nlohmann::json{
-                        {"host_id", getTemporaryTelemetryHostId()},
-                        {"session_id", telemetrySharedState().sessionKey},
-                        {"host_os", getTelemetryHostOS()},
-                        {"host_os_version", getTelemetryHostOSVersion()},
-                    });
+    Telemetry::getInstance().event("depthai_load",
+                                   nlohmann::json{
+                                       {"host_id", getTemporaryTelemetryHostId()},
+                                       {"session_id", telemetrySharedState().sessionKey},
+                                       {"host_os", getTelemetryHostOS()},
+                                       {"host_os_version", getTelemetryHostOSVersion()},
+                                   });
 }
 
 void Telemetry::event(std::string eventName, std::map<std::string, std::string> properties) {
