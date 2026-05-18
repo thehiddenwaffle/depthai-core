@@ -92,37 +92,6 @@ std::optional<PipelineAutoCalibrationMode> parseAutoCalibrationMode(std::string_
     return std::nullopt;
 }
 
-void emitPipelineStartedTelemetry(const dai::Pipeline& pipeline, const dai::PipelineSchema& schema, bool hostOnly) {
-    if(!dai::utility::getEnvAs<bool>("DEPTHAI_TELEMETRY", true, false)) {
-        return;
-    }
-
-    nlohmann::json properties = {
-        {"host_only", hostOnly},
-        {"node_count", schema.nodes.size()},
-        {"connection_count", schema.connections.size()},
-        {"bridge_count", schema.bridges.size()},
-    };
-
-    dai::utility::Telemetry::getInstance().event(pipeline, "pipeline_start", std::move(properties));
-}
-
-void emitPipelineStoppedTelemetry(const dai::Pipeline& pipeline, const dai::PipelineSchema& schema, int64_t durationMs, bool hostOnly) {
-    if(!dai::utility::getEnvAs<bool>("DEPTHAI_TELEMETRY", true, false)) {
-        return;
-    }
-
-    nlohmann::json properties = {
-        {"host_only", hostOnly},
-        {"node_count", schema.nodes.size()},
-        {"connection_count", schema.connections.size()},
-        {"bridge_count", schema.bridges.size()},
-        {"duration_ms", durationMs},
-    };
-
-    dai::utility::Telemetry::getInstance().event(pipeline, "pipeline_stop", std::move(properties));
-}
-
 #ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
 bool hasDifferentDistortion(const CalibrationHandler& lhs, const CalibrationHandler& rhs, CameraBoardSocket socket) {
     if(!lhs.hasCameraCalibration(socket) || !rhs.hasCameraCalibration(socket)) {
@@ -1163,14 +1132,22 @@ void PipelineImpl::start() {
 
     telemetryPipelineStartedAt = std::chrono::steady_clock::now();
 
-    emitPipelineStartedTelemetry(Pipeline(shared_from_this()), getPipelineSchema(SerializationType::JSON, false), isHostOnly());
-
     // Add pointer to the pipeline to the device
     if(defaultDevice) {
         std::shared_ptr<PipelineImpl> shared = shared_from_this();
         const auto weak = std::weak_ptr<PipelineImpl>(shared);
         defaultDevice->pipelinePtr = weak;
     }
+
+    const auto telemetrySchema = getPipelineSchema(SerializationType::JSON, false);
+    dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
+                                                 "pipeline_start",
+                                                 nlohmann::json{
+                                                     {"host_only", isHostOnly()},
+                                                     {"node_count", telemetrySchema.nodes.size()},
+                                                     {"connection_count", telemetrySchema.connections.size()},
+                                                     {"bridge_count", telemetrySchema.bridges.size()},
+                                                 });
 
     // Setup pipeline state trace logging if enabled
     if(buildingOnHost && utility::getEnvAs<bool>("DEPTHAI_PIPELINE_DEBUGGING", false)) {
@@ -1234,7 +1211,16 @@ void PipelineImpl::stop() {
 
     if(telemetryPipelineStartedAt.has_value()) {
         const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *telemetryPipelineStartedAt).count();
-        emitPipelineStoppedTelemetry(Pipeline(shared_from_this()), getPipelineSchema(SerializationType::JSON, false), durationMs, isHostOnly());
+        const auto telemetrySchema = getPipelineSchema(SerializationType::JSON, false);
+        dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
+                                                     "pipeline_stop",
+                                                     nlohmann::json{
+                                                         {"host_only", isHostOnly()},
+                                                         {"node_count", telemetrySchema.nodes.size()},
+                                                         {"connection_count", telemetrySchema.connections.size()},
+                                                         {"bridge_count", telemetrySchema.bridges.size()},
+                                                         {"duration_ms", durationMs},
+                                                     });
         telemetryPipelineStartedAt.reset();
     }
 

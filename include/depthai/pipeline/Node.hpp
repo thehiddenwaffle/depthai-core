@@ -2,15 +2,12 @@
 
 #include <algorithm>
 #include <functional>
-#include <map>
 #include <memory>
 #include <set>
 #include <string>
 #include <tuple>
 #include <unordered_set>
 #include <utility>
-
-#include <nlohmann/json.hpp>
 
 // project
 #include "depthai/openvino/OpenVINO.hpp"
@@ -601,19 +598,6 @@ class Node : public std::enable_shared_from_this<Node> {
     // access
     Pipeline getParentPipeline();
     const Pipeline getParentPipeline() const;
-
-    void event(std::string eventName, std::map<std::string, std::string> properties);
-
-    template <typename T>
-    void event(std::string eventName, std::map<std::string, T> properties) {
-        nlohmann::json jsonProperties = nlohmann::json::object();
-        for(auto& [key, value] : properties) {
-            jsonProperties[key] = value;
-        }
-        event(std::move(eventName), std::move(jsonProperties));
-    }
-
-    void event(std::string eventName, nlohmann::json properties);
 
     /// Get alias
     std::string getAlias() const {

@@ -445,6 +445,7 @@ class DeviceBase {
     std::string getDeviceId();
 
     std::string getTemporaryTelemetryDeviceId() const;
+    std::optional<std::string> getActiveTelemetryPipelineId() const;
 
     /**
      * Sets logging level which decides printing level to standard output.

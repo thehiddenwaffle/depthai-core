@@ -559,12 +559,6 @@ void DeviceBase::emitDeviceTelemetryEvent(const std::string& eventName, nlohmann
     }
 
     try {
-        if(!properties.is_object()) {
-            properties = nlohmann::json::object();
-        }
-        if(auto pipeline = pipelinePtr.lock()) {
-            properties["pipeline_id"] = pipeline->telemetryPipelineId;
-        }
         if(eventName == "device_constructor") {
             properties["device_model"] = lowercase(getProductName());
             properties["platform"] = lowercase(getPlatformAsString());
@@ -1531,6 +1525,13 @@ std::string DeviceBase::getTemporaryTelemetryDeviceId() const {
         return tmpDeviceId;
     }
     return utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
+}
+
+std::optional<std::string> DeviceBase::getActiveTelemetryPipelineId() const {
+    if(auto pipeline = pipelinePtr.lock()) {
+        return pipeline->telemetryPipelineId;
+    }
+    return std::nullopt;
 }
 
 std::vector<CameraBoardSocket> DeviceBase::getConnectedCameras() {

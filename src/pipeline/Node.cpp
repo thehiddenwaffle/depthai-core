@@ -8,7 +8,6 @@
 #include "depthai/pipeline/Pipeline.hpp"
 #include "spdlog/fmt/fmt.h"
 #include "utility/ErrorMacros.hpp"
-#include "utility/Telemetry.hpp"
 
 namespace dai {
 
@@ -26,18 +25,6 @@ Pipeline Node::getParentPipeline() {
         throw std::runtime_error("Pipeline is null");
     }
     return Pipeline(impl);
-}
-
-void Node::event(std::string eventName, std::map<std::string, std::string> properties) {
-    nlohmann::json jsonProperties = nlohmann::json::object();
-    for(auto& [key, value] : properties) {
-        jsonProperties[key] = value;
-    }
-    event(std::move(eventName), std::move(jsonProperties));
-}
-
-void Node::event(std::string eventName, nlohmann::json properties) {
-    utility::Telemetry::getInstance().event(getParentPipeline(), std::move(eventName), std::move(properties));
 }
 
 Node::Input::~Input() = default;

@@ -750,6 +750,11 @@ void addDeviceTelemetryProperties(const DeviceBase& device, nlohmann::json& prop
     if(!properties.contains("device_id")) {
         properties["device_id"] = device.getTemporaryTelemetryDeviceId();
     }
+    if(!properties.contains("pipeline_id")) {
+        if(auto pipelineId = device.getActiveTelemetryPipelineId()) {
+            properties["pipeline_id"] = *pipelineId;
+        }
+    }
 }
 
 void addPipelineTelemetryProperties(const Pipeline& pipeline, nlohmann::json& properties) {
@@ -794,14 +799,6 @@ void emitDepthaiTelemetryLoadEvent() {
                                    });
 }
 
-void Telemetry::event(std::string eventName, std::map<std::string, std::string> properties) {
-    nlohmann::json jsonProperties = nlohmann::json::object();
-    for(auto& [key, value] : properties) {
-        jsonProperties[key] = value;
-    }
-    event(std::move(eventName), std::move(jsonProperties));
-}
-
 void Telemetry::event(std::string eventName, nlohmann::json properties) {
     normalizeTelemetryProperties(properties);
     if(impl) {
@@ -809,27 +806,11 @@ void Telemetry::event(std::string eventName, nlohmann::json properties) {
     }
 }
 
-void Telemetry::event(const DeviceBase& device, std::string eventName, std::map<std::string, std::string> properties) {
-    nlohmann::json jsonProperties = nlohmann::json::object();
-    for(auto& [key, value] : properties) {
-        jsonProperties[key] = value;
-    }
-    event(device, std::move(eventName), std::move(jsonProperties));
-}
-
 void Telemetry::event(const DeviceBase& device, std::string eventName, nlohmann::json properties) {
     addDeviceTelemetryProperties(device, properties);
     if(impl) {
         impl->event(std::move(eventName), std::move(properties));
     }
-}
-
-void Telemetry::event(const Pipeline& pipeline, std::string eventName, std::map<std::string, std::string> properties) {
-    nlohmann::json jsonProperties = nlohmann::json::object();
-    for(auto& [key, value] : properties) {
-        jsonProperties[key] = value;
-    }
-    event(pipeline, std::move(eventName), std::move(jsonProperties));
 }
 
 void Telemetry::event(const Pipeline& pipeline, std::string eventName, nlohmann::json properties) {

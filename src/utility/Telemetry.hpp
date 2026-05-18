@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <memory>
 #include <string>
 
@@ -23,42 +22,9 @@ class Telemetry {
     Telemetry(Telemetry&&) = delete;
     Telemetry& operator=(Telemetry&&) = delete;
 
-    void event(std::string eventName, std::map<std::string, std::string> properties);
-
-    template <typename T>
-    void event(std::string eventName, std::map<std::string, T> properties) {
-        nlohmann::json jsonProperties = nlohmann::json::object();
-        for(auto& [key, value] : properties) {
-            jsonProperties[key] = value;
-        }
-        event(std::move(eventName), std::move(jsonProperties));
-    }
-
     void event(std::string eventName, nlohmann::json properties);
 
-    void event(const DeviceBase& device, std::string eventName, std::map<std::string, std::string> properties);
-
-    template <typename T>
-    void event(const DeviceBase& device, std::string eventName, std::map<std::string, T> properties) {
-        nlohmann::json jsonProperties = nlohmann::json::object();
-        for(auto& [key, value] : properties) {
-            jsonProperties[key] = value;
-        }
-        event(device, std::move(eventName), std::move(jsonProperties));
-    }
-
     void event(const DeviceBase& device, std::string eventName, nlohmann::json properties);
-
-    void event(const Pipeline& pipeline, std::string eventName, std::map<std::string, std::string> properties);
-
-    template <typename T>
-    void event(const Pipeline& pipeline, std::string eventName, std::map<std::string, T> properties) {
-        nlohmann::json jsonProperties = nlohmann::json::object();
-        for(auto& [key, value] : properties) {
-            jsonProperties[key] = value;
-        }
-        event(pipeline, std::move(eventName), std::move(jsonProperties));
-    }
 
     void event(const Pipeline& pipeline, std::string eventName, nlohmann::json properties);
 
