@@ -1005,10 +1005,21 @@ class DeviceBase {
     /**
      * Checks if a GPU is available on the device.
      *
+     *
      * @note This is only meaningful on RVC4 platforms.
      * @returns True if supported, false otherwise
      */
     bool isGpuAvailable();
+
+    /**
+     * Checks if GPUStereo is supported on the device.
+     *
+     * @note This is only meaningful on RVC4 platforms.
+     * @returns True if supported, false otherwise
+     *
+     * @deprecated Use isGpuAvailable().
+     */
+    bool isGpuStereoSupported();
 
     /**
      * Returns the subset of device zoo models currently available on the device.
