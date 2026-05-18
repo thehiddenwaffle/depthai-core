@@ -562,7 +562,9 @@ void DeviceBase::emitDeviceTelemetryEvent(const std::string& eventName, nlohmann
         if(!properties.is_object()) {
             properties = nlohmann::json::object();
         }
-        properties["session_id"] = utility::getTelemetrySessionId();
+        if(auto pipeline = pipelinePtr.lock()) {
+            properties["pipeline_id"] = pipeline->telemetryPipelineId;
+        }
         if(eventName == "device_constructor") {
             properties["device_model"] = lowercase(getProductName());
             properties["platform"] = lowercase(getPlatformAsString());

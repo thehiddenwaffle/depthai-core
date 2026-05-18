@@ -21,6 +21,7 @@
 #include "utility/Platform.hpp"
 #include "utility/RecordReplayImpl.hpp"
 #include "utility/Serialization.hpp"
+#include "utility/Uuid.hpp"
 
 // shared
 #include "depthai/pipeline/NodeConnectionSchema.hpp"
@@ -158,6 +159,10 @@ bool hasDifferentDistortion(const CalibrationHandler& lhs, const CalibrationHand
 namespace fs = std::filesystem;
 
 std::mutex pipelineBuildMutex;
+
+std::string PipelineImpl::createTelemetryPipelineId() {
+    return utility::generateUuidV7();
+}
 
 Node::Id PipelineImpl::getNextUniqueId() {
     return latestId++;

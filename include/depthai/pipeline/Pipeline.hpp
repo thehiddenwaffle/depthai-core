@@ -2,7 +2,6 @@
 #pragma once
 
 // standard
-#include <atomic>
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -87,10 +86,7 @@ class PipelineImpl : public std::enable_shared_from_this<PipelineImpl> {
     std::vector<std::shared_ptr<Node>> getSourceNodes();
 
    private:
-    static std::string createTelemetryPipelineId() {
-        static std::atomic<std::uint64_t> nextId{0};
-        return std::to_string(nextId.fetch_add(1, std::memory_order_relaxed) + 1);
-    }
+    static std::string createTelemetryPipelineId();
 
     // static functions
     static bool isSamePipeline(const Node::Output& out, const Node::Input& in);

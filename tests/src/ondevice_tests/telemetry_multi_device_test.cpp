@@ -267,6 +267,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     REQUIRE_FALSE(requests.empty());
 
     std::map<std::string, int> counts;
+    std::set<std::string> sessionIds;
     const std::set<std::string> allowedEvents = {
         "depthai_load", "device_constructor", "camera_sensor_mode_started", "pipeline_start", "pipeline_stop", "device_destructor", "ping"};
 
@@ -277,13 +278,18 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         INFO("Telemetry event: " << eventName);
         REQUIRE(allowedEvents.count(eventName) == 1);
         counts[eventName] += 1;
+        sessionIds.insert(request.body["properties"].value("$session_id", std::string{}));
     }
+
+    CAPTURE(sessionIds.size());
+    REQUIRE(sessionIds.size() == 1);
 
     const auto depthaiLoadRequests = getEventRequests(requests, "depthai_load");
     CAPTURE(depthaiLoadRequests.size());
     REQUIRE(depthaiLoadRequests.size() == 1);
     const auto depthaiLoadProperties = depthaiLoadRequests.front().body["properties"];
-    REQUIRE_FALSE(depthaiLoadProperties.value("session_id", std::string{}).empty());
+    REQUIRE_FALSE(depthaiLoadProperties.value("$session_id", std::string{}).empty());
+    REQUIRE(depthaiLoadProperties.find("session_id") == depthaiLoadProperties.end());
     REQUIRE((depthaiLoadProperties.value("host_os", std::string{}) == "windows" || depthaiLoadProperties.value("host_os", std::string{}) == "linux"
              || depthaiLoadProperties.value("host_os", std::string{}) == "mac" || depthaiLoadProperties.value("host_os", std::string{}) == "oakapp"));
     REQUIRE_FALSE(depthaiLoadProperties.value("host_os_version", std::string{}).empty());
@@ -297,7 +303,8 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
 
     for(const auto& request : deviceConstructorRequests) {
         const auto properties = request.body["properties"];
-        REQUIRE_FALSE(properties.value("session_id", std::string{}).empty());
+        REQUIRE_FALSE(properties.value("$session_id", std::string{}).empty());
+        REQUIRE(properties.find("session_id") == properties.end());
         const auto deviceId = properties.value("device_id", std::string{});
         REQUIRE_FALSE(deviceId.empty());
         REQUIRE_FALSE(properties.value("device_model", std::string{}).empty());
@@ -342,6 +349,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
                  || properties.value("fsync_mode", std::string{}) == "output" || properties.value("fsync_mode", std::string{}) == "ptp"));
         REQUIRE(properties.contains("hdr_enabled"));
         REQUIRE(properties["hdr_enabled"].is_boolean());
+        REQUIRE_FALSE(properties.value("pipeline_id", std::string{}).empty());
     });
 
     const auto validatePipelineRequests = [&](const std::string& eventName, auto&& validator) {
@@ -388,7 +396,8 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     REQUIRE(pipelineStartDeviceIds == pipelineStopDeviceIds);
 
     validateTelemetryDeviceRequests("device_destructor", [&](const Json& properties) {
-        REQUIRE_FALSE(properties.value("session_id", std::string{}).empty());
+        REQUIRE_FALSE(properties.value("$session_id", std::string{}).empty());
+        REQUIRE(properties.find("session_id") == properties.end());
         expectIntegerProperty(properties, "duration_ms");
     });
 }

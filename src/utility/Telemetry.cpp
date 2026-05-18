@@ -1,4 +1,5 @@
 #include "utility/Telemetry.hpp"
+#include "utility/Uuid.hpp"
 
 #include <algorithm>
 #include <array>
@@ -119,38 +120,6 @@ std::string generateUuidV4() {
     }
 
     bytes[6] = static_cast<std::uint8_t>((bytes[6] & 0x0F) | 0x40);
-    bytes[8] = static_cast<std::uint8_t>((bytes[8] & 0x3F) | 0x80);
-
-    std::ostringstream stream;
-    stream << std::hex << std::setfill('0');
-    for(std::size_t index = 0; index < bytes.size(); ++index) {
-        stream << std::setw(2) << static_cast<int>(bytes[index]);
-        if(index == 3 || index == 5 || index == 7 || index == 9) {
-            stream << '-';
-        }
-    }
-    return stream.str();
-}
-
-std::string generateUuidV7() {
-    static std::mt19937_64 generator(std::random_device{}());
-    static std::uniform_int_distribution<int> distribution(0, 255);
-
-    std::array<std::uint8_t, 16> bytes{};
-    const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
-
-    bytes[0] = static_cast<std::uint8_t>((nowMs >> 40) & 0xFF);
-    bytes[1] = static_cast<std::uint8_t>((nowMs >> 32) & 0xFF);
-    bytes[2] = static_cast<std::uint8_t>((nowMs >> 24) & 0xFF);
-    bytes[3] = static_cast<std::uint8_t>((nowMs >> 16) & 0xFF);
-    bytes[4] = static_cast<std::uint8_t>((nowMs >> 8) & 0xFF);
-    bytes[5] = static_cast<std::uint8_t>(nowMs & 0xFF);
-
-    for(std::size_t index = 6; index < bytes.size(); ++index) {
-        bytes[index] = static_cast<std::uint8_t>(distribution(generator));
-    }
-
-    bytes[6] = static_cast<std::uint8_t>((bytes[6] & 0x0F) | 0x70);
     bytes[8] = static_cast<std::uint8_t>((bytes[8] & 0x3F) | 0x80);
 
     std::ostringstream stream;
@@ -309,7 +278,7 @@ class TemporaryIdsManager {
         bool changed = false;
         auto document = loadLocked(currentMs, changed);
         if(isExpired(document.host, currentMs)) {
-            document.host.id = generateUuidV7();
+            document.host.id = utility::generateUuidV7();
             document.host.expiresAtMs = currentMs + std::chrono::duration_cast<std::chrono::milliseconds>(TMP_ID_TTL).count();
             changed = true;
         }
@@ -329,7 +298,7 @@ class TemporaryIdsManager {
         if(it == document.devices.end()) {
             TemporaryDeviceIdEntry entry;
             entry.mxid = mxid;
-            entry.tmpDeviceId = generateUuidV7();
+            entry.tmpDeviceId = utility::generateUuidV7();
             entry.expiresAtMs = currentMs + std::chrono::duration_cast<std::chrono::milliseconds>(TMP_ID_TTL).count();
             const auto tmpDeviceId = entry.tmpDeviceId;
             document.devices.push_back(entry);
@@ -339,7 +308,7 @@ class TemporaryIdsManager {
         }
 
         if(isExpired(*it, currentMs)) {
-            it->tmpDeviceId = generateUuidV7();
+            it->tmpDeviceId = utility::generateUuidV7();
             it->expiresAtMs = currentMs + std::chrono::duration_cast<std::chrono::milliseconds>(TMP_ID_TTL).count();
             changed = true;
         }
@@ -383,7 +352,7 @@ struct TelemetrySharedState {
     bool enabled{false};
     std::string apiKey;
     std::string captureUrl;
-    std::string sessionKey{generateUuidV7()};
+    std::string sessionKey{utility::generateUuidV7()};
 
     std::filesystem::path queueDir;
 
@@ -820,7 +789,6 @@ std::string getTelemetryHostOSVersion() {
 void emitDepthaiTelemetryLoadEvent() {
     Telemetry::getInstance().event("depthai_load",
                                    nlohmann::json{
-                                       {"session_id", telemetrySharedState().sessionKey},
                                        {"host_os", getTelemetryHostOS()},
                                        {"host_os_version", getTelemetryHostOSVersion()},
                                    });
