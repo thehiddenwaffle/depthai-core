@@ -7,7 +7,7 @@ import numpy as np
 
 device = dai.Device()
 
-if not device.isGpuAvailable():
+if not device.hasGPU():
     print("Exiting GPUStereo example: GPU not available on this device.")
     raise SystemExit(0)
 

@@ -6,20 +6,22 @@
 #include <opencv2/opencv.hpp>
 
 int main() {
-    dai::Device device;
+    std::shared_ptr<dai::Device> device = std::make_shared<dai::Device>();
 
-    if(!device.isGpuAvailable()) {
+    if(!device->hasGPU()) {
         std::cout << "Exiting GPUStereo example: GPU not available on this device.\n";
         return 0;
     }
 
     dai::Pipeline pipeline(device);
-    auto camLeft = pipeline.create<dai::node::Camera>()->build(dai::CameraBoardSocket::CAM_B);
-    auto camRight = pipeline.create<dai::node::Camera>()->build(dai::CameraBoardSocket::CAM_C);
+    auto camLeft = pipeline.create<dai::node::Camera>();
+    auto camRight = pipeline.create<dai::node::Camera>();
+    camLeft->build(dai::CameraBoardSocket::CAM_B);
+    camRight->build(dai::CameraBoardSocket::CAM_C);
 
     auto gpu = pipeline.create<dai::node::GPUStereo>();
-    camLeft->requestOutput({1280, 800}, dai::ImgFrame::Type::GRAY8, 30)->link(gpu->left);
-    camRight->requestOutput({1280, 800}, dai::ImgFrame::Type::GRAY8, 30)->link(gpu->right);
+    camLeft->requestOutput({1280, 800}, dai::ImgFrame::Type::GRAY8, dai::ImgResizeMode::CROP, 30.0f)->link(gpu->left);
+    camRight->requestOutput({1280, 800}, dai::ImgFrame::Type::GRAY8, dai::ImgResizeMode::CROP, 30.0f)->link(gpu->right);
     gpu->setRectification(true);
     gpu->setConfidenceThreshold(25);
 

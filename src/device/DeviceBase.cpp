@@ -1523,13 +1523,13 @@ bool DeviceBase::isNeuralDepthSupported() {
     return pimpl->rpcCallChecked<bool>("isNeuralDepthSupported");
 }
 
-bool DeviceBase::isGpuAvailable() {
+bool DeviceBase::hasGPU() {
     if(getPlatform() != Platform::RVC4) return false;
-    return pimpl->rpcCallChecked<bool>("isGpuAvailable");
+    return pimpl->rpcCallChecked<bool>("hasGPU");
 }
 
 bool DeviceBase::isGpuStereoSupported() {
-    return isGpuAvailable();
+    return hasGPU();
 }
 
 std::vector<DeviceModelZoo> DeviceBase::getSupportedDeviceModels() {

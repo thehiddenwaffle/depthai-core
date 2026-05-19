@@ -1009,7 +1009,7 @@ class DeviceBase {
      * @note This is only meaningful on RVC4 platforms.
      * @returns True if supported, false otherwise
      */
-    bool isGpuAvailable();
+    bool hasGPU();
 
     /**
      * Checks if GPUStereo is supported on the device.
@@ -1017,7 +1017,7 @@ class DeviceBase {
      * @note This is only meaningful on RVC4 platforms.
      * @returns True if supported, false otherwise
      *
-     * @deprecated Use isGpuAvailable().
+     * @deprecated Use hasGPU().
      */
     bool isGpuStereoSupported();
 

@@ -10,7 +10,7 @@ TEST_CASE("GPUStereo produces disparity on supported devices", "[GPUStereo][onde
         SKIP(std::string("No device available: ") + e.what());
     }
 
-    if(!device->isGpuAvailable()) {
+    if(!device->hasGPU()) {
         SKIP("GPU not available on this device");
     }
 
