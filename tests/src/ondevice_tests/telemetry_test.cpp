@@ -208,6 +208,21 @@ void expectIntegerProperty(const Json& value, const std::string& key) {
     REQUIRE(value.at(key).is_number_integer());
 }
 
+void expectTelemetrySchemaProperty(const Json& properties) {
+    const auto telemetrySchema = properties.value("telemetrySchema", std::string{});
+    INFO("Telemetry schema: " << telemetrySchema);
+    REQUIRE_FALSE(telemetrySchema.empty());
+
+    const auto schema = Json::parse(telemetrySchema);
+    REQUIRE(schema.is_object());
+    REQUIRE(schema.contains("nodes"));
+    REQUIRE(schema["nodes"].is_array());
+    REQUIRE(schema.contains("connections"));
+    REQUIRE(schema["connections"].is_array());
+    REQUIRE(schema.contains("bridges"));
+    REQUIRE(schema["bridges"].is_array());
+}
+
 std::vector<ReceivedRequest> runTelemetryScenario() {
 #ifndef DEPTHAI_TELEMETRY_TEST_CHILD_PATH
     FAIL("DEPTHAI_TELEMETRY_TEST_CHILD_PATH was not defined");
@@ -386,9 +401,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     REQUIRE(pipelineStartProperties.contains("host_only"));
     REQUIRE(pipelineStartProperties["host_only"].is_boolean());
     REQUIRE_FALSE(pipelineStartProperties["host_only"].get<bool>());
-    expectIntegerProperty(pipelineStartProperties, "node_count");
-    expectIntegerProperty(pipelineStartProperties, "connection_count");
-    expectIntegerProperty(pipelineStartProperties, "bridge_count");
+    expectTelemetrySchemaProperty(pipelineStartProperties);
     REQUIRE_FALSE(pipelineStartProperties.value("device_id", std::string{}).empty());
     REQUIRE_FALSE(pipelineStartProperties.value("pipeline_id", std::string{}).empty());
 
@@ -396,9 +409,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     REQUIRE(pipelineStopProperties.contains("host_only"));
     REQUIRE(pipelineStopProperties["host_only"].is_boolean());
     REQUIRE_FALSE(pipelineStopProperties["host_only"].get<bool>());
-    expectIntegerProperty(pipelineStopProperties, "node_count");
-    expectIntegerProperty(pipelineStopProperties, "connection_count");
-    expectIntegerProperty(pipelineStopProperties, "bridge_count");
+    expectTelemetrySchemaProperty(pipelineStopProperties);
     expectIntegerProperty(pipelineStopProperties, "duration_ms");
     REQUIRE_FALSE(pipelineStopProperties.value("pipeline_id", std::string{}).empty());
 

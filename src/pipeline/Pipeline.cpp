@@ -17,10 +17,10 @@
 #include "utility/HolisticRecordReplay.hpp"
 #include "utility/Logging.hpp"
 #include "utility/PipelineImplHelper.hpp"
-#include "utility/Telemetry.hpp"
 #include "utility/Platform.hpp"
 #include "utility/RecordReplayImpl.hpp"
 #include "utility/Serialization.hpp"
+#include "utility/Telemetry.hpp"
 #include "utility/Uuid.hpp"
 
 // shared
@@ -1144,9 +1144,7 @@ void PipelineImpl::start() {
                                                  "pipeline_start",
                                                  nlohmann::json{
                                                      {"host_only", isHostOnly()},
-                                                     {"node_count", telemetrySchema.nodes.size()},
-                                                     {"connection_count", telemetrySchema.connections.size()},
-                                                     {"bridge_count", telemetrySchema.bridges.size()},
+                                                     {"telemetrySchema", nlohmann::json(telemetrySchema).dump()},
                                                  });
 
     // Setup pipeline state trace logging if enabled
@@ -1211,16 +1209,7 @@ void PipelineImpl::stop() {
 
     if(telemetryPipelineStartedAt.has_value()) {
         const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *telemetryPipelineStartedAt).count();
-        const auto telemetrySchema = getPipelineSchema(SerializationType::JSON, false);
-        dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
-                                                     "pipeline_stop",
-                                                     nlohmann::json{
-                                                         {"host_only", isHostOnly()},
-                                                         {"node_count", telemetrySchema.nodes.size()},
-                                                         {"connection_count", telemetrySchema.connections.size()},
-                                                         {"bridge_count", telemetrySchema.bridges.size()},
-                                                         {"duration_ms", durationMs},
-                                                     });
+        dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()), "pipeline_stop", nlohmann::json{{"duration_ms", durationMs}});
         telemetryPipelineStartedAt.reset();
     }
 

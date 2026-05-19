@@ -176,6 +176,21 @@ void expectIntegerProperty(const Json& value, const std::string& key) {
     REQUIRE(value.at(key).is_number_integer());
 }
 
+void expectTelemetrySchemaProperty(const Json& properties) {
+    const auto telemetrySchema = properties.value("telemetrySchema", std::string{});
+    INFO("Telemetry schema: " << telemetrySchema);
+    REQUIRE_FALSE(telemetrySchema.empty());
+
+    const auto schema = Json::parse(telemetrySchema);
+    REQUIRE(schema.is_object());
+    REQUIRE(schema.contains("nodes"));
+    REQUIRE(schema["nodes"].is_array());
+    REQUIRE(schema.contains("connections"));
+    REQUIRE(schema["connections"].is_array());
+    REQUIRE(schema.contains("bridges"));
+    REQUIRE(schema["bridges"].is_array());
+}
+
 std::vector<ReceivedRequest> getEventRequests(const std::vector<ReceivedRequest>& requests, const std::string& eventName) {
     std::vector<ReceivedRequest> matches;
     for(const auto& request : requests) {
@@ -375,9 +390,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         REQUIRE(properties.contains("host_only"));
         REQUIRE(properties["host_only"].is_boolean());
         REQUIRE_FALSE(properties["host_only"].get<bool>());
-        expectIntegerProperty(properties, "node_count");
-        expectIntegerProperty(properties, "connection_count");
-        expectIntegerProperty(properties, "bridge_count");
+        expectTelemetrySchemaProperty(properties);
         REQUIRE_FALSE(properties.value("pipeline_id", std::string{}).empty());
     });
 
@@ -385,9 +398,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         REQUIRE(properties.contains("host_only"));
         REQUIRE(properties["host_only"].is_boolean());
         REQUIRE_FALSE(properties["host_only"].get<bool>());
-        expectIntegerProperty(properties, "node_count");
-        expectIntegerProperty(properties, "connection_count");
-        expectIntegerProperty(properties, "bridge_count");
+        expectTelemetrySchemaProperty(properties);
         expectIntegerProperty(properties, "duration_ms");
         REQUIRE_FALSE(properties.value("pipeline_id", std::string{}).empty());
     });
