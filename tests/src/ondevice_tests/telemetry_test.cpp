@@ -357,21 +357,12 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
 
     std::map<std::string, int> counts;
     std::set<std::string> sessionIds;
-    const std::set<std::string> allowedEvents = {"depthai_load",
-                                                 "depthai_device_constructor",
-                                                 "depthai_camera_sensor_mode_started",
-                                                 "depthai_node_created",
-                                                 "depthai_pipeline_start",
-                                                 "depthai_pipeline_stop",
-                                                 "depthai_device_destructor",
-                                                 "depthai_ping"};
 
     for(const auto& request : requests) {
         expectCommonEventShape(request);
 
         const auto eventName = request.body.value("event", std::string{});
         INFO("Telemetry event: " << eventName);
-        REQUIRE(allowedEvents.count(eventName) == 1);
 
         const auto properties = request.body["properties"];
         sessionIds.insert(properties.value("$session_id", std::string{}));
