@@ -45,6 +45,7 @@ std::string getTelemetrySessionId();
 std::string getTelemetryHostOS();
 std::string getTelemetryHostOSVersion();
 bool isTelemetryEnabled();
+void setTelemetryUsesPython(bool value);
 void emitDepthaiTelemetryLoadEvent();
 
 }  // namespace utility

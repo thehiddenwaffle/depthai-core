@@ -387,6 +387,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
              || depthaiLoadProperties.value("host_os", std::string{}) == "mac" || depthaiLoadProperties.value("host_os", std::string{}) == "oakapp"));
     REQUIRE_FALSE(depthaiLoadProperties.value("host_os_version", std::string{}).empty());
     REQUIRE(depthaiLoadProperties.value("is_oak_app", false));
+    REQUIRE_FALSE(depthaiLoadProperties.value("uses_python", true));
     const auto deviceConstructorProperties = deviceConstructor.body["properties"];
     REQUIRE_FALSE(deviceConstructorProperties.value("$session_id", std::string{}).empty());
     REQUIRE(deviceConstructorProperties.find("session_id") == deviceConstructorProperties.end());

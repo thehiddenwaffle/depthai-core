@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
@@ -51,6 +52,8 @@ constexpr char DEFAULT_POSTHOG_API_KEY[] = "phc_navwoWmBZEUeN5UH2sFBbQJSJw6DwEUk
 constexpr char DEFAULT_TELEMETRY_ROOT_DIR[] = "telemetry";
 constexpr char TMP_IDS_FILENAME[] = "tmpIds.json";
 constexpr auto TMP_ID_TTL = std::chrono::hours(24);
+
+std::atomic_bool telemetryUsesPython{false};
 
 std::string readEnv(const char* name) {
     const char* value = std::getenv(name);
@@ -793,12 +796,17 @@ bool isTelemetryEnabled() {
     return value != "0" && value != "false" && value != "off" && value != "no";
 }
 
+void setTelemetryUsesPython(bool value) {
+    telemetryUsesPython.store(value);
+}
+
 void emitDepthaiTelemetryLoadEvent() {
     Telemetry::getInstance().event("depthai_load",
                                    nlohmann::json{
                                        {"host_os", getTelemetryHostOS()},
                                        {"host_os_version", getTelemetryHostOSVersion()},
                                        {"is_oak_app", !readEnv("OAKAGENT_PRIVATE_HTTP_PWD").empty()},
+                                       {"uses_python", telemetryUsesPython.load()},
                                    });
 }
 
