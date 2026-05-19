@@ -288,6 +288,13 @@ class DeviceBase {
     std::optional<Version> getBootloaderVersion();
 
     /**
+     * Gets device OS version if supported by the connected device.
+     *
+     * @returns OS version string, for example "1.32.0"
+     */
+    std::string getOSVersion();
+
+    /**
      * Checks if devices pipeline is already running
      *
      * @returns True if running, false otherwise
