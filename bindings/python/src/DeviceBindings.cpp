@@ -1021,6 +1021,13 @@ void DeviceBindings::bind(pybind11::module& m, void* pCallstack) {
             },
             DOC(dai, DeviceBase, isNeuralDepthSupported))
         .def(
+            "hasGPU",
+            [](DeviceBase& d) {
+                py::gil_scoped_release release;
+                return d.hasGPU();
+            },
+            DOC(dai, DeviceBase, hasGPU))
+        .def(
             "getSupportedDeviceModels",
             [](DeviceBase& d) {
                 py::gil_scoped_release release;
