@@ -1183,6 +1183,13 @@ void PipelineImpl::start() {
     // Indicate that pipeline is running
     running = true;
 
+    // Add pointer to the pipeline to the device before device-side startup can emit telemetry.
+    if(defaultDevice) {
+        std::shared_ptr<PipelineImpl> shared = shared_from_this();
+        const auto weak = std::weak_ptr<PipelineImpl>(shared);
+        defaultDevice->pipelinePtr = weak;
+    }
+
     // Start device pipeline if not host-only
     if(!isHostOnly()) {
         DAI_CHECK_V(defaultDevice, "Default device is null");
@@ -1197,13 +1204,6 @@ void PipelineImpl::start() {
     }
 
     telemetryPipelineStartedAt = std::chrono::steady_clock::now();
-
-    // Add pointer to the pipeline to the device
-    if(defaultDevice) {
-        std::shared_ptr<PipelineImpl> shared = shared_from_this();
-        const auto weak = std::weak_ptr<PipelineImpl>(shared);
-        defaultDevice->pipelinePtr = weak;
-    }
 
     const auto pipeline = Pipeline(shared_from_this());
     const auto telemetrySchema = makeTelemetrySchemaJson(getPipelineSchema(SerializationType::JSON, false));

@@ -24,7 +24,7 @@ namespace {
 
 constexpr int kPort = 8955;
 constexpr char kTelemetryUrl[] = "http://localhost:8955";
-constexpr auto kRequestTimeout = std::chrono::seconds(10);
+constexpr auto kRequestTimeout = std::chrono::seconds(20);
 
 using Json = nlohmann::json;
 
