@@ -132,7 +132,6 @@ class LocalTelemetryServer {
 
 subprocess::env_map_t makeChildEnv(const std::filesystem::path& tempHome) {
     return {
-        {makeEnvString("DEPTHAI_TELEMETRY"), makeEnvString("1")},
         {makeEnvString("DEPTHAI_TELEMETRY_URL"), makeEnvString(kTelemetryUrl)},
         {makeEnvString("HOME"), makeEnvString(tempHome.string())},
     };

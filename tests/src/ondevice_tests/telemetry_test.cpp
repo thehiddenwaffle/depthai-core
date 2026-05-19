@@ -147,7 +147,6 @@ class LocalTelemetryServer {
 
 subprocess::env_map_t makeChildEnv(const std::filesystem::path& tempHome) {
     return {
-        {makeEnvString("DEPTHAI_TELEMETRY"), makeEnvString("1")},
         {makeEnvString("DEPTHAI_TELEMETRY_URL"), makeEnvString(kTelemetryUrl)},
         {makeEnvString("HOME"), makeEnvString(tempHome.string())},
     };
@@ -274,6 +273,58 @@ std::vector<ReceivedRequest> runTelemetryScenario() {
     return requests;
 }
 
+std::vector<ReceivedRequest> runTelemetryDisabledScenario() {
+#ifndef DEPTHAI_TELEMETRY_TEST_CHILD_PATH
+    FAIL("DEPTHAI_TELEMETRY_TEST_CHILD_PATH was not defined");
+#endif
+
+    LocalTelemetryServer server;
+    server.start();
+
+    const ScopedTempDir tempHome("depthai-telemetry-disabled-test");
+    std::filesystem::create_directories(tempHome.get());
+    const auto executableString = std::filesystem::path(DEPTHAI_TELEMETRY_TEST_CHILD_PATH).string();
+    auto childEnv = makeChildEnv(tempHome.get());
+    childEnv[makeEnvString("DEPTHAI_TELEMETRY")] = makeEnvString("0");
+    subprocess::Popen proc({executableString},
+                           subprocess::output{subprocess::PIPE},
+                           subprocess::error{subprocess::PIPE},
+                           subprocess::environment{std::move(childEnv)},
+                           subprocess::session_leader{true});
+
+    const auto deadline = std::chrono::steady_clock::now() + kRequestTimeout;
+    int status = proc.poll();
+    bool childKilled = false;
+    while(status == -1 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        status = proc.poll();
+    }
+    if(status == -1) {
+        proc.kill();
+        childKilled = true;
+        const auto killDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while((status = proc.poll()) == -1 && std::chrono::steady_clock::now() < killDeadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    const auto requests = server.snapshot();
+    const bool listenFailed = server.hadListenFailure();
+    const auto childResult = collectChildResult(proc, childKilled);
+    server.stop();
+
+    CAPTURE(childResult.status);
+    CAPTURE(childResult.wasKilled);
+    INFO("Child stdout:\n" << childResult.stdoutText);
+    INFO("Child stderr:\n" << childResult.stderrText);
+    REQUIRE_FALSE(listenFailed);
+    REQUIRE_FALSE(childResult.wasKilled);
+    REQUIRE(childResult.status == 0);
+
+    return requests;
+}
+
 void validateRequests(const std::vector<ReceivedRequest>& requests) {
     CAPTURE(requests.size());
     REQUIRE(requests.size() >= 5);
@@ -368,4 +419,10 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
 TEST_CASE("Telemetry can be redirected with DEPTHAI_TELEMETRY_URL", "[ondevice][telemetry]") {
     const auto requests = runTelemetryScenario();
     validateRequests(requests);
+}
+
+TEST_CASE("Telemetry can be disabled with DEPTHAI_TELEMETRY", "[ondevice][telemetry]") {
+    const auto requests = runTelemetryDisabledScenario();
+    CAPTURE(requests.size());
+    REQUIRE(requests.empty());
 }
