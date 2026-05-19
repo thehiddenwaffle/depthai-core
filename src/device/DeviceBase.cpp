@@ -2143,6 +2143,8 @@ bool DeviceBase::startPipelineImpl(const Pipeline& pipeline) {
 void DeviceBase::mockCameraFeatures(const std::filesystem::path& replayPath) {
 #ifdef DEPTHAI_HAVE_OPENCV_SUPPORT
     if(!replayPath.empty() && !hasMockedFeatures) hasMockedFeatures = utility::mockCameraFeatures(*this, replayPath);
+#else
+    (void)replayPath;
 #endif
 }
 
