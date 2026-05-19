@@ -645,6 +645,10 @@ dai_set_test_labels(resolutions_test ondevice) # TODO(jakob) Make the test runna
 dai_add_test(serialization_test src/onhost_tests/serialization_test.cpp)
 dai_set_test_labels(serialization_test ondevice rvc2_all ci)
 
+# GPU availability test (pure host-side logic)
+dai_add_test(gpu_availability_test src/onhost_tests/gpu_availability_test.cpp)
+dai_set_test_labels(gpu_availability_test onhost ci)
+
 # Subnode test
 dai_add_test(subnode_test src/ondevice_tests/pipeline/subnode_test.cpp)
 dai_set_test_labels(subnode_test ondevice rvc2_all rvc4 rvc4rgb ci)

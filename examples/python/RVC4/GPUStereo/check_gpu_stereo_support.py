@@ -12,4 +12,4 @@ args = parser.parse_args()
 device = dai.Device(args.device) if args.device else dai.Device()
 
 print("Platform:", device.getPlatformAsString())
-print("GPU available:", device.isGpuAvailable())
+print("GPU available:", device.hasGPU())
