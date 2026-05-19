@@ -201,7 +201,7 @@ void PipelineBindings::bind(pybind11::module& m, void* pCallstack) {
                  d.wait();
              })
         //.def(py::init<const Pipeline&>())
-        .def("getDefaultDevice", &Pipeline::getDefaultDevice, DOC(dai, Pipeline, getDefaultDevice))
+        .def("getDefaultDevice", static_cast<std::shared_ptr<Device> (Pipeline::*)()>(&Pipeline::getDefaultDevice), DOC(dai, Pipeline, getDefaultDevice))
         .def("getGlobalProperties", &Pipeline::getGlobalProperties, DOC(dai, Pipeline, getGlobalProperties))
         .def("setDefaultDeviceProperties",
              &Pipeline::setDefaultDeviceProperties,
@@ -255,7 +255,7 @@ void PipelineBindings::bind(pybind11::module& m, void* pCallstack) {
         .def("getAutoCalibration", &Pipeline::getAutoCalibration)
         .def("setAutoCalibrationMode", &Pipeline::setAutoCalibrationMode, py::arg("mode"))
         .def("getAutoCalibrationMode", &Pipeline::getAutoCalibrationMode)
-        .def("getDefaultDevice", &Pipeline::getDefaultDevice, DOC(dai, Pipeline, getDefaultDevice))
+        .def("getDefaultDevice", static_cast<std::shared_ptr<Device> (Pipeline::*)()>(&Pipeline::getDefaultDevice), DOC(dai, Pipeline, getDefaultDevice))
         // 'Template' create function
         .def(
             "add",
