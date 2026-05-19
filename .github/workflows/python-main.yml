@@ -415,12 +415,6 @@ jobs:
           python -m pip install --force-reinstall $wheel
 
           EXPECTED_VERSION="$ver" python bindings/python/ci/smoke_depthai.py
-      - name: Upload combined wheels to Artifact Keeper
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-        run: cd bindings/python && bash ./ci/upload-ak.sh --snapshot
-        env:
-          AK_URL: ${{ secrets.AK_URL }}
-          AK_TOKEN: ${{ secrets.AK_TOKEN }}
 
   # This job builds wheels for x86_64 arch
   build-linux-x86_64:
@@ -542,12 +536,6 @@ jobs:
 
           # Smoke test: fail hard on any exception or version mismatch
           EXPECTED_VERSION="$ver" "$PYBIN" bindings/python/ci/smoke_depthai.py
-      - name: Upload combined wheels to Artifact Keeper
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-        run: cd bindings/python && bash ./ci/upload-ak.sh --snapshot
-        env:
-          AK_URL: ${{ secrets.AK_URL }}
-          AK_TOKEN: ${{ secrets.AK_TOKEN }}
 
   # This job builds wheels for ARM64 arch
   build-linux-arm64:
@@ -673,12 +661,6 @@ jobs:
           "$PYBIN" -m pip install --force-reinstall $wheel
 
           EXPECTED_VERSION="$ver" "$PYBIN" bindings/python/ci/smoke_depthai.py
-      - name: Upload combined wheels to Artifact Keeper
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-        run: cd bindings/python && bash ./ci/upload-ak.sh --snapshot
-        env:
-          AK_URL: ${{ secrets.AK_URL }}
-          AK_TOKEN: ${{ secrets.AK_TOKEN }}
 
   combine-windows-x86_64-wheels:
     needs: build-windows-x86_64
@@ -732,8 +714,21 @@ jobs:
           # Smoke test (no heredoc; YAML-safe). Fail on import error or version mismatch.
           $env:EXPECTED_VERSION = $ver
           python bindings/python/ci/smoke_depthai.py
+
+  upload-wheels-to-ak:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    needs: [combine-macos-wheels, combine-linux-x86_64-wheels, combine-linux-arm64-wheels, combine-windows-x86_64-wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: audited-wheels-combined-*
+          merge-multiple: true
+          path: bindings/python/wheelhouse/audited/
+
       - name: Upload combined wheels to Artifact Keeper
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
         run: cd bindings/python && bash ./ci/upload-ak.sh --snapshot
         env:
           AK_URL: ${{ secrets.AK_URL }}
@@ -741,7 +736,7 @@ jobs:
 
   notify-slack:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-    needs: [combine-macos-wheels, combine-linux-x86_64-wheels, combine-linux-arm64-wheels, combine-windows-x86_64-wheels]
+    needs: [upload-wheels-to-ak]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
