@@ -207,6 +207,8 @@ void expectCommonEventShape(const ReceivedRequest& request) {
     REQUIRE(properties.value("$lib", std::string{}) == "depthai-core");
     REQUIRE_FALSE(properties.value("$lib_version", std::string{}).empty());
     REQUIRE_FALSE(properties.value("$session_id", std::string{}).empty());
+    REQUIRE(properties.value("source_product", std::string{}) == "depthai");
+    REQUIRE(properties.value("source_component", std::string{}) == "depthai-core");
     REQUIRE(properties.contains("$process_person_profile"));
     REQUIRE(properties["$process_person_profile"].is_boolean());
     REQUIRE_FALSE(properties["$process_person_profile"].get<bool>());
@@ -249,7 +251,8 @@ std::vector<ReceivedRequest> runTelemetryScenario() {
                            subprocess::environment{std::move(childEnv)},
                            subprocess::session_leader{true});
 
-    const std::set<std::string> requiredEvents = {"depthai_load", "device_constructor", "camera_sensor_mode_started", "pipeline_start", "pipeline_stop"};
+    const std::set<std::string> requiredEvents = {
+        "depthai_load", "depthai_device_constructor", "depthai_camera_sensor_mode_started", "depthai_pipeline_start", "depthai_pipeline_stop"};
     const bool waitedForEvents = server.waitForRequiredEvents(requiredEvents, kRequestTimeout);
     const auto requests = server.snapshot();
     const bool listenFailed = server.hadListenFailure();
@@ -355,13 +358,13 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     std::map<std::string, int> counts;
     std::set<std::string> sessionIds;
     const std::set<std::string> allowedEvents = {"depthai_load",
-                                                 "device_constructor",
-                                                 "camera_sensor_mode_started",
+                                                 "depthai_device_constructor",
+                                                 "depthai_camera_sensor_mode_started",
                                                  "depthai_node_created",
-                                                 "pipeline_start",
-                                                 "pipeline_stop",
-                                                 "device_destructor",
-                                                 "ping"};
+                                                 "depthai_pipeline_start",
+                                                 "depthai_pipeline_stop",
+                                                 "depthai_device_destructor",
+                                                 "depthai_ping"};
 
     for(const auto& request : requests) {
         expectCommonEventShape(request);
@@ -379,10 +382,10 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     REQUIRE(sessionIds.size() == 1);
 
     const auto& depthaiLoad = getSingleEventRequest(requests, "depthai_load");
-    const auto& deviceConstructor = getSingleEventRequest(requests, "device_constructor");
-    const auto& cameraSensorModeStarted = getSingleEventRequest(requests, "camera_sensor_mode_started");
-    const auto& pipelineStart = getSingleEventRequest(requests, "pipeline_start");
-    const auto& pipelineStop = getSingleEventRequest(requests, "pipeline_stop");
+    const auto& deviceConstructor = getSingleEventRequest(requests, "depthai_device_constructor");
+    const auto& cameraSensorModeStarted = getSingleEventRequest(requests, "depthai_camera_sensor_mode_started");
+    const auto& pipelineStart = getSingleEventRequest(requests, "depthai_pipeline_start");
+    const auto& pipelineStop = getSingleEventRequest(requests, "depthai_pipeline_stop");
     const auto depthaiNodeCreatedRequests = getEventRequests(requests, "depthai_node_created");
     REQUIRE_FALSE(depthaiNodeCreatedRequests.empty());
     const auto depthaiLoadProperties = depthaiLoad.body["properties"];
@@ -438,15 +441,15 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     REQUIRE_FALSE(pipelineStopProperties.value("pipeline_id", std::string{}).empty());
 
     CAPTURE(counts["depthai_load"]);
-    CAPTURE(counts["device_constructor"]);
-    CAPTURE(counts["camera_sensor_mode_started"]);
-    CAPTURE(counts["pipeline_start"]);
-    CAPTURE(counts["pipeline_stop"]);
+    CAPTURE(counts["depthai_device_constructor"]);
+    CAPTURE(counts["depthai_camera_sensor_mode_started"]);
+    CAPTURE(counts["depthai_pipeline_start"]);
+    CAPTURE(counts["depthai_pipeline_stop"]);
     REQUIRE(counts["depthai_load"] == 1);
-    REQUIRE(counts["device_constructor"] == 1);
-    REQUIRE(counts["camera_sensor_mode_started"] == 1);
-    REQUIRE(counts["pipeline_start"] == 1);
-    REQUIRE(counts["pipeline_stop"] == 1);
+    REQUIRE(counts["depthai_device_constructor"] == 1);
+    REQUIRE(counts["depthai_camera_sensor_mode_started"] == 1);
+    REQUIRE(counts["depthai_pipeline_start"] == 1);
+    REQUIRE(counts["depthai_pipeline_stop"] == 1);
 }
 
 }  // namespace

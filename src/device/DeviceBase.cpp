@@ -607,7 +607,7 @@ void DeviceBase::telemetryPingLoop() {
         }
 
         lock.unlock();
-        dai::utility::Telemetry::getInstance().event(*this, "ping", nlohmann::json::object());
+        dai::utility::Telemetry::getInstance().event(*this, "depthai_ping", nlohmann::json::object());
         lock.lock();
     }
 }
@@ -621,7 +621,7 @@ void DeviceBase::startTelemetryLifecycle(bool reconnect) {
     tmpDeviceId = utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
     telemetryLifecycleStarted = true;
     dai::utility::Telemetry::getInstance().event(*this,
-                                                 "device_constructor",
+                                                 "depthai_device_constructor",
                                                  nlohmann::json{
                                                      {"device_model", lowercase(getProductName())},
                                                      {"platform", lowercase(getPlatformAsString())},
@@ -655,7 +655,7 @@ void DeviceBase::stopTelemetryLifecycle() {
     }
 
     const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - telemetryCreatedAt).count();
-    dai::utility::Telemetry::getInstance().event(*this, "device_destructor", nlohmann::json{{"duration_ms", durationMs}});
+    dai::utility::Telemetry::getInstance().event(*this, "depthai_device_destructor", nlohmann::json{{"duration_ms", durationMs}});
     telemetryLifecycleStarted = false;
 }
 

@@ -455,6 +455,8 @@ void TelemetrySharedState::event(std::string eventName, nlohmann::json propertie
     if(!properties.contains("$process_person_profile")) {
         properties["$process_person_profile"] = false;
     }
+    properties["source_product"] = "depthai";
+    properties["source_component"] = "depthai-core";
 
     const auto hostId = getTemporaryTelemetryHostId();
 

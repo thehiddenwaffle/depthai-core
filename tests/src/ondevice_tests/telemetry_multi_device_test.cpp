@@ -165,6 +165,8 @@ void expectCommonEventShape(const ReceivedRequest& request) {
     REQUIRE(properties.value("$lib", std::string{}) == "depthai-core");
     REQUIRE_FALSE(properties.value("$lib_version", std::string{}).empty());
     REQUIRE_FALSE(properties.value("$session_id", std::string{}).empty());
+    REQUIRE(properties.value("source_product", std::string{}) == "depthai");
+    REQUIRE(properties.value("source_component", std::string{}) == "depthai-core");
     REQUIRE(properties.contains("$process_person_profile"));
     REQUIRE(properties["$process_person_profile"].is_boolean());
     REQUIRE_FALSE(properties["$process_person_profile"].get<bool>());
@@ -281,13 +283,13 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     std::map<std::string, int> counts;
     std::set<std::string> sessionIds;
     const std::set<std::string> allowedEvents = {"depthai_load",
-                                                 "device_constructor",
-                                                 "camera_sensor_mode_started",
+                                                 "depthai_device_constructor",
+                                                 "depthai_camera_sensor_mode_started",
                                                  "depthai_node_created",
-                                                 "pipeline_start",
-                                                 "pipeline_stop",
-                                                 "device_destructor",
-                                                 "ping"};
+                                                 "depthai_pipeline_start",
+                                                 "depthai_pipeline_stop",
+                                                 "depthai_device_destructor",
+                                                 "depthai_ping"};
 
     for(const auto& request : requests) {
         expectCommonEventShape(request);
@@ -312,7 +314,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
              || depthaiLoadProperties.value("host_os", std::string{}) == "mac" || depthaiLoadProperties.value("host_os", std::string{}) == "oakapp"));
     REQUIRE_FALSE(depthaiLoadProperties.value("host_os_version", std::string{}).empty());
 
-    const auto deviceConstructorRequests = getEventRequests(requests, "device_constructor");
+    const auto deviceConstructorRequests = getEventRequests(requests, "depthai_device_constructor");
     CAPTURE(deviceConstructorRequests.size());
     REQUIRE_FALSE(deviceConstructorRequests.empty());
     const auto deviceCount = deviceConstructorRequests.size();
@@ -357,7 +359,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         }
     };
 
-    validateTelemetryDeviceRequests("camera_sensor_mode_started", [&](const Json& properties) {
+    validateTelemetryDeviceRequests("depthai_camera_sensor_mode_started", [&](const Json& properties) {
         REQUIRE_FALSE(properties.value("socket", std::string{}).empty());
         expectIntegerProperty(properties, "width");
         expectIntegerProperty(properties, "height");
@@ -402,7 +404,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         return rawDeviceIds;
     };
 
-    const auto pipelineStartDeviceIds = validatePipelineRequests("pipeline_start", [&](const Json& properties) {
+    const auto pipelineStartDeviceIds = validatePipelineRequests("depthai_pipeline_start", [&](const Json& properties) {
         REQUIRE(properties.contains("host_only"));
         REQUIRE(properties["host_only"].is_boolean());
         REQUIRE_FALSE(properties["host_only"].get<bool>());
@@ -410,7 +412,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         REQUIRE_FALSE(properties.value("pipeline_id", std::string{}).empty());
     });
 
-    const auto pipelineStopDeviceIds = validatePipelineRequests("pipeline_stop", [&](const Json& properties) {
+    const auto pipelineStopDeviceIds = validatePipelineRequests("depthai_pipeline_stop", [&](const Json& properties) {
         REQUIRE(properties.contains("host_only"));
         REQUIRE(properties["host_only"].is_boolean());
         REQUIRE_FALSE(properties["host_only"].get<bool>());
@@ -420,7 +422,7 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
 
     REQUIRE(pipelineStartDeviceIds == pipelineStopDeviceIds);
 
-    validateTelemetryDeviceRequests("device_destructor", [&](const Json& properties) {
+    validateTelemetryDeviceRequests("depthai_device_destructor", [&](const Json& properties) {
         REQUIRE_FALSE(properties.value("$session_id", std::string{}).empty());
         REQUIRE(properties.find("session_id") == properties.end());
         expectIntegerProperty(properties, "duration_ms");

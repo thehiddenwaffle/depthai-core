@@ -1209,7 +1209,7 @@ void PipelineImpl::start() {
     const auto telemetrySchema = makeTelemetrySchemaJson(getPipelineSchema(SerializationType::JSON, false));
     emitTelemetryNodeCreatedEvents(pipeline, telemetrySchema);
     dai::utility::Telemetry::getInstance().event(pipeline,
-                                                 "pipeline_start",
+                                                 "depthai_pipeline_start",
                                                  nlohmann::json{
                                                      {"host_only", isHostOnly()},
                                                      {"pipeline_schema", telemetrySchema},
@@ -1278,7 +1278,7 @@ void PipelineImpl::stop() {
     if(telemetryPipelineStartedAt.has_value()) {
         const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *telemetryPipelineStartedAt).count();
         dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
-                                                     "pipeline_stop",
+                                                     "depthai_pipeline_stop",
                                                      nlohmann::json{
                                                          {"host_only", isHostOnly()},
                                                          {"duration_ms", durationMs},
