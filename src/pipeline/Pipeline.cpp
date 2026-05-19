@@ -66,6 +66,7 @@ namespace dai {
 
 namespace {
 
+#ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
 const char* autoCalibrationModeToString(PipelineAutoCalibrationMode mode) {
     switch(mode) {
         case PipelineAutoCalibrationMode::OFF:
@@ -92,6 +93,7 @@ std::optional<PipelineAutoCalibrationMode> parseAutoCalibrationMode(std::string_
     }
     return std::nullopt;
 }
+#endif
 
 PipelineSchema anonymizeCustomNodesForTelemetry(PipelineSchema schema) {
     for(auto& node : schema.nodes) {

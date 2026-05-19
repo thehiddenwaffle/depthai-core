@@ -75,7 +75,7 @@ else()
 endif()
 
 # Create depthai project
-project(depthai VERSION "3.5.0" LANGUAGES CXX C)
+project(depthai VERSION "3.6.1" LANGUAGES CXX C)
 set(DEPTHAI_PRE_RELEASE_TYPE "") # Valid options are "alpha", "beta", "rc", ""
 set(DEPTHAI_PRE_RELEASE_VERSION "0") # Valid options are "0", "1", "2", ...
 
@@ -1170,10 +1170,10 @@ if(DEPTHAI_SANITIZE)
     if(DEPTHAI_HAVE_OPENCV_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
         add_sanitizers(${TARGET_OPENCV_NAME})
     endif()
-    if(DEPTHAI_HAVE_RTABMAP_SUPPORT)
+    if(DEPTHAI_HAVE_RTABMAP_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
         add_sanitizers(${TARGET_RTABMAP_NAME})
     endif()
-    if(DEPTHAI_HAVE_BASALT_SUPPORT)
+    if(DEPTHAI_HAVE_BASALT_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
         add_sanitizers(${TARGET_BASALT_NAME})
     endif()
     if(DEPTHAI_HAVE_PCL_SUPPORT AND NOT DEPTHAI_MERGED_TARGET)
@@ -1283,7 +1283,10 @@ include(CMakePackageConfigHelpers)
 
 # Add additional targets to export group
 if(NOT BUILD_SHARED_LIBS)
-    list(APPEND targets_to_export ${DEPTHAI_RESOURCE_LIBRARY_NAME} cmrc-base XLink)
+    list(APPEND targets_to_export XLink)
+    if(DEPTHAI_BINARIES_RESOURCE_COMPILE)
+        list(APPEND targets_to_export ${DEPTHAI_RESOURCE_LIBRARY_NAME} cmrc-base)
+    endif()
     if(DEPTHAI_ENABLE_PROTOBUF)
         list(APPEND targets_to_export messages)
     endif()

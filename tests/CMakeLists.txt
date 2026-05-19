@@ -670,6 +670,10 @@ dai_set_test_labels(resolutions_test ondevice) # TODO(jakob) Make the test runna
 dai_add_test(serialization_test src/onhost_tests/serialization_test.cpp)
 dai_set_test_labels(serialization_test ondevice rvc2_all ci)
 
+# GPU availability test
+dai_add_test(gpu_availability_test src/ondevice_tests/gpu_availability_test.cpp)
+dai_set_test_labels(gpu_availability_test ondevice rvc4)
+
 # Subnode test
 dai_add_test(subnode_test src/ondevice_tests/pipeline/subnode_test.cpp)
 dai_set_test_labels(subnode_test ondevice rvc2_all rvc4 rvc4rgb ci)
@@ -740,6 +744,9 @@ dai_set_test_labels(regression_camera_concurrency_test ondevice rvc4 ci noreplay
 dai_add_test(regression_message_group_test src/ondevice_tests/regression/message_group.cpp)
 dai_set_test_labels(regression_message_group_test ondevice rvc2_all rvc4 rvc4rgb ci)
 
+dai_add_test(regression_boot_test src/ondevice_tests/regression/boot.cpp)
+dai_set_test_labels(regression_boot_test ondevice rvc2 rvc4 usb ci noreplayci)
+
 # Sync test
 dai_add_test(sync_test src/ondevice_tests/pipeline/node/sync_test.cpp)
 dai_set_test_labels(sync_test ondevice rvc2_all rvc4 ci)
@@ -767,9 +774,13 @@ dai_set_test_labels(bridge_large_messages ondevice rvc4 rvc4rgb ci)
 dai_add_test(image_align_node_test src/ondevice_tests/image_align_node_test.cpp)
 dai_set_test_labels(image_align_node_test ondevice rvc2_all rvc4 ci)
 
-# Script node test
+# Common Script node test
 dai_add_test(script_node_test src/ondevice_tests/script_node_test.cpp)
 dai_set_test_labels(script_node_test ondevice rvc2_all rvc4 rvc4rgb ci)
+
+# RVC4 specific Script node test
+dai_add_test(script_node_rvc4_test src/ondevice_tests/script_node_rvc4_test.cpp)
+dai_set_test_labels(script_node_rvc4_test ondevice rvc4 rvc4rgb ci)
 
 # StereoDepth test
 dai_add_test(stereo_depth_node_test src/ondevice_tests/stereo_depth_node_test.cpp)
