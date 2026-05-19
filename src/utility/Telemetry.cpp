@@ -1,5 +1,4 @@
 #include "utility/Telemetry.hpp"
-#include "utility/Uuid.hpp"
 
 #include <algorithm>
 #include <array>
@@ -29,6 +28,7 @@
 #include "depthai/pipeline/Pipeline.hpp"
 #include "utility/Logging.hpp"
 #include "utility/Platform.hpp"
+#include "utility/Uuid.hpp"
 
 #ifdef DEPTHAI_ENABLE_CURL
     #include <cpr/cpr.h>
@@ -405,7 +405,7 @@ TelemetrySharedState::TelemetrySharedState() {
         return;
     }
 
-    #ifdef DEPTHAI_ENABLE_CURL
+#ifdef DEPTHAI_ENABLE_CURL
     enabled = isTelemetryEnabled();
     if(!enabled) {
         logger::debug("Telemetry disabled via DEPTHAI_TELEMETRY");
@@ -413,9 +413,9 @@ TelemetrySharedState::TelemetrySharedState() {
     }
 
     worker = std::thread([this]() { workerLoop(); });
-    #else
+#else
     logger::debug("Telemetry disabled: depthai-core was built without CURL support");
-    #endif
+#endif
 }
 
 TelemetrySharedState::~TelemetrySharedState() {
@@ -627,7 +627,7 @@ void TelemetrySharedState::flushOneBatch() {
     std::vector<std::string> deletableFiles;
     bool shouldRetry = false;
 
-    #ifdef DEPTHAI_ENABLE_CURL
+#ifdef DEPTHAI_ENABLE_CURL
     try {
         for(std::size_t index = 0; index < events.size(); ++index) {
             const auto& queuedEvent = events[index];
@@ -673,7 +673,7 @@ void TelemetrySharedState::flushOneBatch() {
         logger::debug("Telemetry capture upload threw an exception: {}", ex.what());
         shouldRetry = true;
     }
-    #endif
+#endif
 
     std::lock_guard<std::mutex> lock(mutex);
     deleteFilesLocked(deletableFiles);

@@ -1,3 +1,5 @@
+#include <httplib.h>
+
 #include <algorithm>
 #include <catch2/catch_all.hpp>
 #include <chrono>
@@ -5,13 +7,11 @@
 #include <filesystem>
 #include <map>
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <set>
 #include <string>
 #include <thread>
 #include <vector>
-
-#include <httplib.h>
-#include <nlohmann/json.hpp>
 
 #include "subprocess.hpp"
 #include "utility/Platform.hpp"

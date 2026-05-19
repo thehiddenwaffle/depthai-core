@@ -1,13 +1,13 @@
 #include <pybind11/eval.h>
 
+#include <string>
+#include <utility>
+
 #include "Common.hpp"
 #include "NodeBindings.hpp"
 #include "depthai/pipeline/ThreadedHostNode.hpp"
 #include "depthai/pipeline/node/host/HostNode.hpp"
 #include "pipeline/ThreadedNodeImpl.hpp"
-
-#include <string>
-#include <utility>
 
 extern py::handle daiNodeModule;
 extern py::object messageQueueException;  // Needed to be able to catch in C++ after it's raised on the Python side

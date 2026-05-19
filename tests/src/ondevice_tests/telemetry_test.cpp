@@ -1,3 +1,5 @@
+#include <httplib.h>
+
 #include <algorithm>
 #include <catch2/catch_all.hpp>
 #include <cerrno>
@@ -8,14 +10,12 @@
 #include <filesystem>
 #include <map>
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
-
-#include <httplib.h>
-#include <nlohmann/json.hpp>
 
 #include "subprocess.hpp"
 #include "utility/Platform.hpp"
@@ -396,7 +396,8 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     REQUIRE_FALSE(deviceConstructorProperties.value("device_id", std::string{}).empty());
     REQUIRE_FALSE(deviceConstructorProperties.value("device_model", std::string{}).empty());
     REQUIRE_FALSE(deviceConstructorProperties.value("platform", std::string{}).empty());
-    REQUIRE((deviceConstructorProperties.value("protocol", std::string{}) == "usb" || deviceConstructorProperties.value("protocol", std::string{}) == "ethernet"));
+    REQUIRE(
+        (deviceConstructorProperties.value("protocol", std::string{}) == "usb" || deviceConstructorProperties.value("protocol", std::string{}) == "ethernet"));
     REQUIRE_FALSE(deviceConstructorProperties.value("protocol_speed", std::string{}).empty());
     REQUIRE(deviceConstructorProperties.contains("standalone"));
     REQUIRE(deviceConstructorProperties["standalone"].is_boolean());
