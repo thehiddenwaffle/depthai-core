@@ -24,6 +24,7 @@ namespace {
 
 constexpr int kPort = 8955;
 constexpr char kTelemetryUrl[] = "http://localhost:8955";
+constexpr char kTelemetryApiKey[] = "phc_depthai_telemetry_test";
 constexpr auto kRequestTimeout = std::chrono::seconds(20);
 
 using Json = nlohmann::json;
@@ -148,6 +149,7 @@ class LocalTelemetryServer {
 subprocess::env_map_t makeChildEnv(const std::filesystem::path& tempHome) {
     return {
         {makeEnvString("DEPTHAI_TELEMETRY_URL"), makeEnvString(kTelemetryUrl)},
+        {makeEnvString("DEPTHAI_TELEMETRY_API_KEY"), makeEnvString(kTelemetryApiKey)},
         {makeEnvString("OAKAGENT_PRIVATE_HTTP_PWD"), makeEnvString("telemetry-test")},
         {makeEnvString("HOME"), makeEnvString(tempHome.string())},
     };
@@ -198,7 +200,7 @@ void expectCommonEventShape(const ReceivedRequest& request) {
     REQUIRE((request.path == "/capture/" || request.path == "/capture"));
     REQUIRE(request.userAgent.rfind("depthai-core/", 0) == 0);
     REQUIRE(request.body.is_object());
-    REQUIRE_FALSE(request.body.value("api_key", std::string{}).empty());
+    REQUIRE(request.body.value("api_key", std::string{}) == kTelemetryApiKey);
     REQUIRE_FALSE(request.body.value("timestamp", std::string{}).empty());
     REQUIRE_FALSE(request.body.value("distinct_id", std::string{}).empty());
 

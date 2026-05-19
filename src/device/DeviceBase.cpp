@@ -604,10 +604,11 @@ void DeviceBase::telemetryEventLoop() {
 
 void DeviceBase::telemetryPingLoop() {
     using namespace std::chrono_literals;
+    constexpr auto TELEMETRY_PING_INTERVAL = 5min;
 
     std::unique_lock<std::mutex> lock(telemetryPingMtx);
     while(telemetryPingRunning) {
-        if(telemetryPingCondVar.wait_for(lock, 20s, [this]() { return !telemetryPingRunning.load(); })) {
+        if(telemetryPingCondVar.wait_for(lock, TELEMETRY_PING_INTERVAL, [this]() { return !telemetryPingRunning.load(); })) {
             break;
         }
 

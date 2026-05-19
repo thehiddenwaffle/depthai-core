@@ -47,8 +47,8 @@ constexpr std::size_t DEFAULT_MAX_BATCH_SIZE = 50;
 constexpr std::chrono::seconds DEFAULT_FLUSH_INTERVAL{30};
 constexpr std::chrono::seconds RETRY_DELAY{5};
 constexpr std::chrono::seconds MAX_RETRY_DELAY{30};
-constexpr char DEFAULT_POSTHOG_HOST[] = "https://eu.i.posthog.com";
-constexpr char DEFAULT_POSTHOG_API_KEY[] = "phc_navwoWmBZEUeN5UH2sFBbQJSJw6DwEUkFa8QTq9W4Mji";
+constexpr char DEFAULT_POSTHOG_HOST[] = "https://b.luxonis.com";
+constexpr char DEFAULT_POSTHOG_API_KEY[] = "phc_ojEByaCiZZ5eigzaM43PaEVbfLfFDF5NgkXEMPabrT9a";
 constexpr char DEFAULT_TELEMETRY_ROOT_DIR[] = "telemetry";
 constexpr char TMP_IDS_FILENAME[] = "tmpIds.json";
 constexpr auto TMP_ID_TTL = std::chrono::hours(24);
@@ -391,7 +391,10 @@ class Telemetry::Impl {
 
 TelemetrySharedState::TelemetrySharedState() {
     captureUrl = normalizeCaptureUrl(readEnv("DEPTHAI_TELEMETRY_URL"));
-    apiKey = DEFAULT_POSTHOG_API_KEY;
+    apiKey = trim(readEnv("DEPTHAI_TELEMETRY_API_KEY"));
+    if(apiKey.empty()) {
+        apiKey = DEFAULT_POSTHOG_API_KEY;
+    }
     queueDir = defaultTelemetryBaseDir() / sessionKey;
 
     try {
