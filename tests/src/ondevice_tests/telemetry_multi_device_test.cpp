@@ -282,8 +282,14 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
 
     std::map<std::string, int> counts;
     std::set<std::string> sessionIds;
-    const std::set<std::string> allowedEvents = {
-        "depthai_load", "device_constructor", "camera_sensor_mode_started", "pipeline_start", "pipeline_stop", "device_destructor", "ping"};
+    const std::set<std::string> allowedEvents = {"depthai_load",
+                                                 "device_constructor",
+                                                 "camera_sensor_mode_started",
+                                                 "depthai_node_created",
+                                                 "pipeline_start",
+                                                 "pipeline_stop",
+                                                 "device_destructor",
+                                                 "ping"};
 
     for(const auto& request : requests) {
         expectCommonEventShape(request);
@@ -365,6 +371,18 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         REQUIRE(properties["hdr_enabled"].is_boolean());
         REQUIRE_FALSE(properties.value("pipeline_id", std::string{}).empty());
     });
+
+    const auto depthaiNodeCreatedRequests = getEventRequests(requests, "depthai_node_created");
+    CAPTURE(depthaiNodeCreatedRequests.size());
+    REQUIRE_FALSE(depthaiNodeCreatedRequests.empty());
+    for(const auto& request : depthaiNodeCreatedRequests) {
+        const auto properties = request.body["properties"];
+        REQUIRE_FALSE(properties.value("name", std::string{}).empty());
+        REQUIRE(properties.contains("properties"));
+        REQUIRE(properties["properties"].is_object());
+        REQUIRE(telemetryDeviceIds.count(properties.value("device_id", std::string{})) == 1);
+        REQUIRE_FALSE(properties.value("pipeline_id", std::string{}).empty());
+    }
 
     const auto validatePipelineRequests = [&](const std::string& eventName, auto&& validator) {
         const auto eventRequests = getEventRequests(requests, eventName);

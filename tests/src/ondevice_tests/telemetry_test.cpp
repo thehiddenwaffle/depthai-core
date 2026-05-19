@@ -179,6 +179,16 @@ const ReceivedRequest& getSingleEventRequest(const std::vector<ReceivedRequest>&
     return *match;
 }
 
+std::vector<ReceivedRequest> getEventRequests(const std::vector<ReceivedRequest>& requests, const std::string& eventName) {
+    std::vector<ReceivedRequest> matches;
+    for(const auto& request : requests) {
+        if(request.body.is_object() && request.body.value("event", std::string{}) == eventName) {
+            matches.push_back(request);
+        }
+    }
+    return matches;
+}
+
 void expectCommonEventShape(const ReceivedRequest& request) {
     INFO("Telemetry request raw body: " << request.rawBody);
     INFO("Telemetry request path: " << request.path);
@@ -346,8 +356,14 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
 
     std::map<std::string, int> counts;
     std::set<std::string> sessionIds;
-    const std::set<std::string> allowedEvents = {
-        "depthai_load", "device_constructor", "camera_sensor_mode_started", "pipeline_start", "pipeline_stop", "device_destructor", "ping"};
+    const std::set<std::string> allowedEvents = {"depthai_load",
+                                                 "device_constructor",
+                                                 "camera_sensor_mode_started",
+                                                 "depthai_node_created",
+                                                 "pipeline_start",
+                                                 "pipeline_stop",
+                                                 "device_destructor",
+                                                 "ping"};
 
     for(const auto& request : requests) {
         expectCommonEventShape(request);
@@ -369,6 +385,8 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     const auto& cameraSensorModeStarted = getSingleEventRequest(requests, "camera_sensor_mode_started");
     const auto& pipelineStart = getSingleEventRequest(requests, "pipeline_start");
     const auto& pipelineStop = getSingleEventRequest(requests, "pipeline_stop");
+    const auto depthaiNodeCreatedRequests = getEventRequests(requests, "depthai_node_created");
+    REQUIRE_FALSE(depthaiNodeCreatedRequests.empty());
     const auto depthaiLoadProperties = depthaiLoad.body["properties"];
     REQUIRE_FALSE(depthaiLoadProperties.value("$session_id", std::string{}).empty());
     REQUIRE(depthaiLoadProperties.find("session_id") == depthaiLoadProperties.end());
@@ -396,6 +414,15 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     REQUIRE(cameraSensorModeStartedProperties.contains("hdr_enabled"));
     REQUIRE(cameraSensorModeStartedProperties["hdr_enabled"].is_boolean());
     REQUIRE_FALSE(cameraSensorModeStartedProperties.value("pipeline_id", std::string{}).empty());
+
+    for(const auto& request : depthaiNodeCreatedRequests) {
+        const auto properties = request.body["properties"];
+        REQUIRE_FALSE(properties.value("name", std::string{}).empty());
+        REQUIRE(properties.contains("properties"));
+        REQUIRE(properties["properties"].is_object());
+        REQUIRE_FALSE(properties.value("device_id", std::string{}).empty());
+        REQUIRE_FALSE(properties.value("pipeline_id", std::string{}).empty());
+    }
 
     const auto pipelineStartProperties = pipelineStart.body["properties"];
     REQUIRE(pipelineStartProperties.contains("host_only"));

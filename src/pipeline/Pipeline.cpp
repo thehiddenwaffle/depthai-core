@@ -104,16 +104,57 @@ PipelineSchema anonymizeCustomNodesForTelemetry(PipelineSchema schema) {
     return schema;
 }
 
+bool redactTelemetryNodeProperties(const std::string& nodeName) {
+    return nodeName == "CUSTOM" || nodeName == "DetectionParser" || nodeName == "SegmentationParser";
+}
+
 nlohmann::json makeTelemetrySchemaJson(PipelineSchema schema) {
     auto telemetrySchema = nlohmann::json(anonymizeCustomNodesForTelemetry(std::move(schema)));
     for(auto& node : telemetrySchema["nodes"]) {
         auto& nodeInfo = node.at(1);
         const auto nodeName = nodeInfo.value("name", std::string{});
-        if(nodeName == "CUSTOM" || nodeName == "DetectionParser" || nodeName == "SegmentationParser") {
+        if(redactTelemetryNodeProperties(nodeName)) {
             nodeInfo["properties"] = "REDACTED";
         }
     }
     return telemetrySchema;
+}
+
+nlohmann::json makeTelemetryNodePropertiesJson(const nlohmann::json& properties) {
+    if(properties.is_string() && properties.get<std::string>() == "REDACTED") {
+        return nlohmann::json{{"redacted", true}};
+    }
+    if(properties.is_object()) {
+        return properties;
+    }
+    if(!properties.is_array() || properties.empty()) {
+        return nlohmann::json::object();
+    }
+
+    try {
+        const auto propertyBytes = properties.get<std::vector<std::uint8_t>>();
+        if(propertyBytes.empty()) {
+            return nlohmann::json::object();
+        }
+        auto parsedProperties = nlohmann::json::parse(propertyBytes.begin(), propertyBytes.end());
+        if(parsedProperties.is_object()) {
+            return parsedProperties;
+        }
+    } catch(const std::exception&) {
+    }
+    return nlohmann::json::object();
+}
+
+void emitTelemetryNodeCreatedEvents(const Pipeline& pipeline, const nlohmann::json& telemetrySchema) {
+    for(const auto& node : telemetrySchema.at("nodes")) {
+        const auto& nodeInfo = node.at(1);
+        dai::utility::Telemetry::getInstance().event(pipeline,
+                                                     "depthai_node_created",
+                                                     nlohmann::json{
+                                                         {"name", nodeInfo.value("name", std::string{})},
+                                                         {"properties", makeTelemetryNodePropertiesJson(nodeInfo.value("properties", nlohmann::json{}))},
+                                                     });
+    }
 }
 
 #ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
@@ -1164,8 +1205,10 @@ void PipelineImpl::start() {
         defaultDevice->pipelinePtr = weak;
     }
 
+    const auto pipeline = Pipeline(shared_from_this());
     const auto telemetrySchema = makeTelemetrySchemaJson(getPipelineSchema(SerializationType::JSON, false));
-    dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
+    emitTelemetryNodeCreatedEvents(pipeline, telemetrySchema);
+    dai::utility::Telemetry::getInstance().event(pipeline,
                                                  "pipeline_start",
                                                  nlohmann::json{
                                                      {"host_only", isHostOnly()},
