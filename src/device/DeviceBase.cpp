@@ -134,6 +134,11 @@ std::string telemetryProtocolSpeed(XLinkProtocol_t protocol, dai::UsbSpeed speed
     return "unknown";
 }
 
+bool isLoopbackDeviceName(std::string name) {
+    name = lowercase(std::move(name));
+    return name == "localhost" || name == "::1" || name == "[::1]" || name.rfind("127.", 0) == 0;
+}
+
 }  // namespace
 
 namespace dai {
@@ -627,6 +632,7 @@ void DeviceBase::startTelemetryLifecycle(bool reconnect) {
                                                      {"platform", lowercase(getPlatformAsString())},
                                                      {"protocol", telemetryProtocolName(deviceInfo.protocol)},
                                                      {"protocol_speed", telemetryProtocolSpeed(deviceInfo.protocol, getUsbSpeed())},
+                                                     {"standalone", isLoopbackDeviceName(deviceInfo.name)},
                                                  });
 
     telemetryEventRunning = true;

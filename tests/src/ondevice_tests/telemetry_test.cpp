@@ -396,6 +396,8 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
     REQUIRE_FALSE(deviceConstructorProperties.value("platform", std::string{}).empty());
     REQUIRE((deviceConstructorProperties.value("protocol", std::string{}) == "usb" || deviceConstructorProperties.value("protocol", std::string{}) == "ethernet"));
     REQUIRE_FALSE(deviceConstructorProperties.value("protocol_speed", std::string{}).empty());
+    REQUIRE(deviceConstructorProperties.contains("standalone"));
+    REQUIRE(deviceConstructorProperties["standalone"].is_boolean());
     const auto cameraSensorModeStartedProperties = cameraSensorModeStarted.body["properties"];
     REQUIRE_FALSE(cameraSensorModeStartedProperties.value("socket", std::string{}).empty());
     expectIntegerProperty(cameraSensorModeStartedProperties, "width");

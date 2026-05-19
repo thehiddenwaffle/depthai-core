@@ -323,6 +323,8 @@ void validateRequests(const std::vector<ReceivedRequest>& requests) {
         REQUIRE_FALSE(properties.value("platform", std::string{}).empty());
         REQUIRE((properties.value("protocol", std::string{}) == "usb" || properties.value("protocol", std::string{}) == "ethernet"));
         REQUIRE_FALSE(properties.value("protocol_speed", std::string{}).empty());
+        REQUIRE(properties.contains("standalone"));
+        REQUIRE(properties["standalone"].is_boolean());
         telemetryDeviceIds.insert(deviceId);
     }
 
