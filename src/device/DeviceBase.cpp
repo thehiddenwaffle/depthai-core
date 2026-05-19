@@ -91,10 +91,6 @@ bool isDebuggerEnabled() {
     return dai::utility::getEnvAs<bool>("DEPTHAI_DEBUGGER", false);
 }
 
-bool isTelemetryEnabled() {
-    return dai::utility::getEnvAs<bool>("DEPTHAI_TELEMETRY", true, false);
-}
-
 std::string lowercase(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
     return value;
@@ -553,24 +549,6 @@ void DeviceBase::close() {
     }
 }
 
-void DeviceBase::emitDeviceTelemetryEvent(const std::string& eventName, nlohmann::json properties) {
-    if(!isTelemetryEnabled()) {
-        return;
-    }
-
-    try {
-        if(eventName == "device_constructor") {
-            properties["device_model"] = lowercase(getProductName());
-            properties["platform"] = lowercase(getPlatformAsString());
-            properties["protocol"] = telemetryProtocolName(deviceInfo.protocol);
-            properties["protocol_speed"] = telemetryProtocolSpeed(deviceInfo.protocol, getUsbSpeed());
-        }
-        dai::utility::Telemetry::getInstance().event(*this, eventName, std::move(properties));
-    } catch(const std::exception& ex) {
-        logger::debug("Telemetry event '{}' failed: {}", eventName, ex.what());
-    }
-}
-
 void DeviceBase::telemetryEventLoop() {
     using namespace std::chrono_literals;
 
@@ -601,7 +579,7 @@ void DeviceBase::telemetryEventLoop() {
                 if(!properties.is_object()) {
                     properties = nlohmann::json::object();
                 }
-                emitDeviceTelemetryEvent(eventName, std::move(properties));
+                dai::utility::Telemetry::getInstance().event(*this, eventName, std::move(properties));
             } catch(const std::exception& ex) {
                 pimpl->logger.debug("Failed to parse telemetry event from device: {}", ex.what());
             }
@@ -629,20 +607,27 @@ void DeviceBase::telemetryPingLoop() {
         }
 
         lock.unlock();
-        emitDeviceTelemetryEvent("ping");
+        dai::utility::Telemetry::getInstance().event(*this, "ping", nlohmann::json::object());
         lock.lock();
     }
 }
 
 void DeviceBase::startTelemetryLifecycle(bool reconnect) {
-    if(reconnect || dumpOnly || telemetryLifecycleStarted || !isTelemetryEnabled()) {
+    if(reconnect || dumpOnly || telemetryLifecycleStarted || !dai::utility::isTelemetryEnabled()) {
         return;
     }
 
     telemetryCreatedAt = std::chrono::steady_clock::now();
     tmpDeviceId = utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
     telemetryLifecycleStarted = true;
-    emitDeviceTelemetryEvent("device_constructor");
+    dai::utility::Telemetry::getInstance().event(*this,
+                                                 "device_constructor",
+                                                 nlohmann::json{
+                                                     {"device_model", lowercase(getProductName())},
+                                                     {"platform", lowercase(getPlatformAsString())},
+                                                     {"protocol", telemetryProtocolName(deviceInfo.protocol)},
+                                                     {"protocol_speed", telemetryProtocolSpeed(deviceInfo.protocol, getUsbSpeed())},
+                                                 });
 
     telemetryEventRunning = true;
     telemetryEventThread = std::thread(&DeviceBase::telemetryEventLoop, this);
@@ -670,7 +655,7 @@ void DeviceBase::stopTelemetryLifecycle() {
     }
 
     const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - telemetryCreatedAt).count();
-    emitDeviceTelemetryEvent("device_destructor", nlohmann::json{{"duration_ms", durationMs}});
+    dai::utility::Telemetry::getInstance().event(*this, "device_destructor", nlohmann::json{{"duration_ms", durationMs}});
     telemetryLifecycleStarted = false;
 }
 

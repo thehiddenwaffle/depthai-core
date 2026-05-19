@@ -1047,7 +1047,6 @@ class DeviceBase {
     void tryGetDevice();
     void startTelemetryLifecycle(bool reconnect);
     void stopTelemetryLifecycle();
-    void emitDeviceTelemetryEvent(const std::string& eventName, nlohmann::json properties = {});
     void telemetryEventLoop();
     void telemetryPingLoop();
     struct PrevInfo {

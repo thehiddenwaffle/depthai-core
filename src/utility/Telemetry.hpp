@@ -41,6 +41,7 @@ std::string getTemporaryTelemetryDeviceId(const std::string& mxid);
 std::string getTelemetrySessionId();
 std::string getTelemetryHostOS();
 std::string getTelemetryHostOSVersion();
+bool isTelemetryEnabled();
 void emitDepthaiTelemetryLoadEvent();
 
 }  // namespace utility

@@ -91,16 +91,6 @@ std::string normalizeCaptureUrl(std::string url) {
     return url;
 }
 
-bool telemetryEnabledByDefault() {
-    auto value = trim(readEnv("DEPTHAI_TELEMETRY"));
-    if(value.empty()) {
-        return true;
-    }
-
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
-    return !(value == "0" || value == "false" || value == "off");
-}
-
 std::string lowercase(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
     return value;
@@ -410,7 +400,7 @@ TelemetrySharedState::TelemetrySharedState() {
     }
 
     #ifdef DEPTHAI_ENABLE_CURL
-    enabled = telemetryEnabledByDefault();
+    enabled = isTelemetryEnabled();
     if(!enabled) {
         logger::debug("Telemetry disabled via DEPTHAI_TELEMETRY");
         return;
@@ -789,6 +779,16 @@ std::string getTelemetryHostOS() {
 
 std::string getTelemetryHostOSVersion() {
     return dai::platform::getOSVersion();
+}
+
+bool isTelemetryEnabled() {
+    auto value = trim(readEnv("DEPTHAI_TELEMETRY"));
+    if(value.empty()) {
+        return true;
+    }
+
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return value != "0" && value != "false" && value != "off" && value != "no";
 }
 
 void emitDepthaiTelemetryLoadEvent() {
