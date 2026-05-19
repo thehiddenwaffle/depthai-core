@@ -7,6 +7,10 @@ import numpy as np
 
 device = dai.Device()
 
+if not device.isGpuAvailable():
+    print("Exiting GPUStereo example: GPU not available on this device.")
+    raise SystemExit(0)
+
 pipeline = dai.Pipeline(device)
 cam_left = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
 cam_right = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)

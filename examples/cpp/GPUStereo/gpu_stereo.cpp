@@ -8,6 +8,11 @@
 int main() {
     dai::Device device;
 
+    if(!device.isGpuAvailable()) {
+        std::cout << "Exiting GPUStereo example: GPU not available on this device.\n";
+        return 0;
+    }
+
     dai::Pipeline pipeline(device);
     auto camLeft = pipeline.create<dai::node::Camera>()->build(dai::CameraBoardSocket::CAM_B);
     auto camRight = pipeline.create<dai::node::Camera>()->build(dai::CameraBoardSocket::CAM_C);
