@@ -19,10 +19,7 @@ gpu = pipeline.create(dai.node.GPUStereo)
 cam_left.requestOutput((1280, 800), type=dai.ImgFrame.Type.GRAY8, fps=30).link(gpu.left)
 cam_right.requestOutput((1280, 800), type=dai.ImgFrame.Type.GRAY8, fps=30).link(gpu.right)
 gpu.setRectification(True)
-# GPUStereo follows the same pattern as StereoDepth: configure via initialConfig.
-# Note: only `confidenceThreshold` is supported for GPUStereoConfig.
-gpu.initialConfig.confidenceThreshold = 25
-conf_q = gpu.confidenceMap.createOutputQueue()
+gpu.setConfidenceThreshold(25)
 
 disp_q = gpu.disparity.createOutputQueue()
 
@@ -30,14 +27,8 @@ with pipeline:
     pipeline.start()
     while pipeline.isRunning():
         frame = disp_q.get()
-        disp = frame.getFrame()
-        conf = conf_q.get()
-
-        disp8 = (disp.astype(np.float32) * (255.0 / 96.0)).clip(0, 255).astype(np.uint8)
-        disp8 = cv2.applyColorMap(disp8, cv2.COLORMAP_JET)
-
-        c = conf.getFrame()  # RAW8 confidence map
-        cv2.imshow("GPUStereo Disparity", disp8)
-        cv2.imshow("GPUStereo Confidence", c)
+        d = frame.getFrame().astype(np.float32)
+        d = cv2.normalize(d, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        cv2.imshow("GPUStereo Disparity", cv2.applyColorMap(d, cv2.COLORMAP_JET))
         if cv2.waitKey(1) == ord("q"):
             break

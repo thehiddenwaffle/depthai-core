@@ -29,10 +29,13 @@ int main() {
     while(pipeline.isRunning()) {
         auto frame = dispQ->get<dai::ImgFrame>();
         cv::Mat disp(frame->getHeight(), frame->getWidth(), CV_16UC1, frame->getData().data());
+        cv::Mat dispF;
+        disp.convertTo(dispF, CV_32F);
         cv::Mat disp8;
-        disp.convertTo(disp8, CV_8UC1, 255.0 / 96.0);
-        cv::applyColorMap(disp8, disp8, cv::COLORMAP_JET);
-        cv::imshow("GPUStereo Disparity", disp8);
+        cv::normalize(dispF, disp8, 0, 255, cv::NORM_MINMAX, CV_8U);
+        cv::Mat dispColor;
+        cv::applyColorMap(disp8, dispColor, cv::COLORMAP_JET);
+        cv::imshow("GPUStereo Disparity", dispColor);
         if(cv::waitKey(1) == 'q') break;
     }
 
