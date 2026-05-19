@@ -1212,7 +1212,7 @@ void PipelineImpl::start() {
                                                  "pipeline_start",
                                                  nlohmann::json{
                                                      {"host_only", isHostOnly()},
-                                                     {"telemetrySchema", telemetrySchema.dump()},
+                                                     {"pipeline_schema", telemetrySchema},
                                                  });
 
     // Setup pipeline state trace logging if enabled
@@ -1277,12 +1277,10 @@ void PipelineImpl::stop() {
 
     if(telemetryPipelineStartedAt.has_value()) {
         const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *telemetryPipelineStartedAt).count();
-        const auto telemetrySchema = makeTelemetrySchemaJson(getPipelineSchema(SerializationType::JSON, false));
         dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
                                                      "pipeline_stop",
                                                      nlohmann::json{
                                                          {"host_only", isHostOnly()},
-                                                         {"telemetrySchema", telemetrySchema.dump()},
                                                          {"duration_ms", durationMs},
                                                      });
         telemetryPipelineStartedAt.reset();
