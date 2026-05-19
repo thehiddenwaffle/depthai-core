@@ -104,6 +104,18 @@ PipelineSchema anonymizeCustomNodesForTelemetry(PipelineSchema schema) {
     return schema;
 }
 
+nlohmann::json makeTelemetrySchemaJson(PipelineSchema schema) {
+    auto telemetrySchema = nlohmann::json(anonymizeCustomNodesForTelemetry(std::move(schema)));
+    for(auto& node : telemetrySchema["nodes"]) {
+        auto& nodeInfo = node.at(1);
+        const auto nodeName = nodeInfo.value("name", std::string{});
+        if(nodeName == "CUSTOM" || nodeName == "DetectionParser" || nodeName == "SegmentationParser") {
+            nodeInfo["properties"] = "REDACTED";
+        }
+    }
+    return telemetrySchema;
+}
+
 #ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
 bool hasDifferentDistortion(const CalibrationHandler& lhs, const CalibrationHandler& rhs, CameraBoardSocket socket) {
     if(!lhs.hasCameraCalibration(socket) || !rhs.hasCameraCalibration(socket)) {
@@ -1152,12 +1164,12 @@ void PipelineImpl::start() {
         defaultDevice->pipelinePtr = weak;
     }
 
-    const auto telemetrySchema = anonymizeCustomNodesForTelemetry(getPipelineSchema(SerializationType::JSON, false));
+    const auto telemetrySchema = makeTelemetrySchemaJson(getPipelineSchema(SerializationType::JSON, false));
     dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
                                                  "pipeline_start",
                                                  nlohmann::json{
                                                      {"host_only", isHostOnly()},
-                                                     {"telemetrySchema", nlohmann::json(telemetrySchema).dump()},
+                                                     {"telemetrySchema", telemetrySchema.dump()},
                                                  });
 
     // Setup pipeline state trace logging if enabled
@@ -1222,12 +1234,12 @@ void PipelineImpl::stop() {
 
     if(telemetryPipelineStartedAt.has_value()) {
         const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *telemetryPipelineStartedAt).count();
-        const auto telemetrySchema = anonymizeCustomNodesForTelemetry(getPipelineSchema(SerializationType::JSON, false));
+        const auto telemetrySchema = makeTelemetrySchemaJson(getPipelineSchema(SerializationType::JSON, false));
         dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
                                                      "pipeline_stop",
                                                      nlohmann::json{
                                                          {"host_only", isHostOnly()},
-                                                         {"telemetrySchema", nlohmann::json(telemetrySchema).dump()},
+                                                         {"telemetrySchema", telemetrySchema.dump()},
                                                          {"duration_ms", durationMs},
                                                      });
         telemetryPipelineStartedAt.reset();
