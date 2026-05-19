@@ -191,6 +191,7 @@ std::string getOSVersion() {
 #elif __linux__
     std::ifstream osRelease("/etc/os-release");
     std::string line;
+    std::string version;
     std::string versionCodename;
     std::string prettyName;
     std::string versionId;
@@ -202,7 +203,9 @@ std::string getOSVersion() {
         if(!value.empty() && value.front() == '"' && value.back() == '"' && value.size() >= 2) {
             value = value.substr(1, value.size() - 2);
         }
-        if(key == "VERSION_CODENAME") {
+        if(key == "VERSION") {
+            version = value;
+        } else if(key == "VERSION_CODENAME") {
             versionCodename = value;
         } else if(key == "PRETTY_NAME") {
             prettyName = value;
@@ -210,9 +213,10 @@ std::string getOSVersion() {
             versionId = value;
         }
     }
-    if(!versionCodename.empty()) return versionCodename;
+    if(!version.empty()) return version;
     if(!prettyName.empty()) return prettyName;
     if(!versionId.empty()) return versionId;
+    if(!versionCodename.empty()) return versionCodename;
     return "Linux";
 #else
     return "Other";

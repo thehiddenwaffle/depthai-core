@@ -798,6 +798,7 @@ void emitDepthaiTelemetryLoadEvent() {
                                    nlohmann::json{
                                        {"host_os", getTelemetryHostOS()},
                                        {"host_os_version", getTelemetryHostOSVersion()},
+                                       {"is_oak_app", !readEnv("OAKAGENT_PRIVATE_HTTP_PWD").empty()},
                                    });
 }
 
