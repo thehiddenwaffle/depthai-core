@@ -4,6 +4,9 @@ set -euo pipefail
 : "${AK_URL:?AK_URL must be set}"
 : "${AK_TOKEN:?AK_TOKEN must be set}"
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../../../ci/setup-ak.sh"
+
 # Set repository based on mode
 case "$1" in
     --snapshot)
@@ -19,11 +22,6 @@ case "$1" in
         ;;
 esac
 
-if ! command -v ak >/dev/null 2>&1; then
-    curl -fsSL https://raw.githubusercontent.com/artifact-keeper/artifact-keeper-cli/main/install.sh | sh
-fi
-
-export AK_INSTANCE="${AK_INSTANCE:-${AK_URL}}"
-export AK_NO_INPUT="${AK_NO_INPUT:-1}"
+setup_ak_cli
 
 ak artifact push "$AK_REPO" 'wheelhouse/audited/*'

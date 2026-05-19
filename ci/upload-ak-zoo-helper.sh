@@ -5,7 +5,9 @@ set -euo pipefail
 : "${AK_TOKEN:?AK_TOKEN must be set}"
 : "${ZOO_HELPER_PLATFORM:?ZOO_HELPER_PLATFORM must be set}"
 
-AK_BASE_URL="${AK_URL%/}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/setup-ak.sh"
+
 AK_REPO="luxonis-depthai-helper-binaries"
 
 # Set paths
@@ -28,11 +30,6 @@ echo "zoo_helper binary size: $(du -sh "$ZOO_HELPER_BINARY_LOCAL_PATH")"
 echo "zoo_helper upload path: $AK_REPO:$UPLOAD_PATH"
 echo "----------------------------------------"
 
-if ! command -v ak >/dev/null 2>&1; then
-    curl -fsSL https://raw.githubusercontent.com/artifact-keeper/artifact-keeper-cli/main/install.sh | sh
-fi
-
-export AK_INSTANCE="${AK_INSTANCE:-${AK_BASE_URL}}"
-export AK_NO_INPUT="${AK_NO_INPUT:-1}"
+setup_ak_cli
 
 ak artifact push --path "$UPLOAD_PATH" "$AK_REPO" "$ZOO_HELPER_BINARY_LOCAL_PATH"
