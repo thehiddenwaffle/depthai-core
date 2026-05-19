@@ -31,7 +31,9 @@ bool expectedHasGPU(dai::Device& device) {
     if(device.getPlatform() != dai::Platform::RVC4) return false;
 
     const auto product = device.getProductName();  // Uppercase + hyphenated
-    if(product.rfind("OAK4-D", 0) != 0) return false;
+    const bool isOak4D = product.rfind("OAK4-D", 0) == 0;
+    const bool isOak4S = product.rfind("OAK4-S", 0) == 0;
+    if(!isOak4D && !isOak4S) return false;
 
     const auto eepromFactory = device.readFactoryCalibration().getEepromData();
     const auto eeprom = device.readCalibration().getEepromData();
