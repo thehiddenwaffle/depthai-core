@@ -293,7 +293,9 @@ void PipelineBindings::bind(pybind11::module& m, void* pCallstack) {
                     setCreatingNodeFromPipelineCreate();
                     std::shared_ptr<Node> hostNode;
                     try {
-                        hostNode = py::cast<std::shared_ptr<node::ThreadedHostNode>>(class_(*args, **kwargs));
+                        auto nodeObject = class_(*args, **kwargs);
+                        nodeObject.attr("_setPythonNodeName")(class_.attr("__name__").cast<std::string>());
+                        hostNode = py::cast<std::shared_ptr<node::ThreadedHostNode>>(nodeObject);
                     } catch(...) {
                         delCreatingNodeFromPipelineCreate();
                         delImplicitPipeline();
