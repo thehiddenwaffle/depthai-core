@@ -623,7 +623,14 @@ void DeviceBase::startTelemetryLifecycle(bool reconnect) {
     }
 
     telemetryCreatedAt = std::chrono::steady_clock::now();
-    tmpDeviceId = utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
+    try {
+        tmpDeviceId = pimpl->rpcCallChecked<std::string>("getAnonymousTelemetryId");
+    } catch(const std::exception& ex) {
+        pimpl->logger.debug("Failed to get anonymous telemetry id from device: {}", ex.what());
+    }
+    if(tmpDeviceId.empty()) {
+        tmpDeviceId = utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
+    }
     telemetryLifecycleStarted = true;
     nlohmann::json properties{
         {"device_model", lowercase(getProductName())},
