@@ -23,7 +23,7 @@ if ! command -v ak >/dev/null 2>&1; then
     curl -fsSL https://raw.githubusercontent.com/artifact-keeper/artifact-keeper-cli/main/install.sh | sh
 fi
 
-export AK_NO_INPUT="${AK_NO_INPUT:-1}"
+export AK_NO_INPUT="${AK_NO_INPUT:-true}"
 
 AK_INSTANCE="${AK_INSTANCE:-ci}"
 AK_BASE_URL="${AK_URL%/}"
