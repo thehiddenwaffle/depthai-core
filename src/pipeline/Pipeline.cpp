@@ -92,6 +92,15 @@ std::optional<PipelineAutoCalibrationMode> parseAutoCalibrationMode(std::string_
     return std::nullopt;
 }
 
+PipelineSchema anonymizeCustomNodesForTelemetry(PipelineSchema schema) {
+    for(auto& node : schema.nodes) {
+        if(!node.second.builtInNode) {
+            node.second.name = "CUSTOM";
+        }
+    }
+    return schema;
+}
+
 #ifdef DEPTHAI_HAVE_DYNAMIC_CALIBRATION_SUPPORT
 bool hasDifferentDistortion(const CalibrationHandler& lhs, const CalibrationHandler& rhs, CameraBoardSocket socket) {
     if(!lhs.hasCameraCalibration(socket) || !rhs.hasCameraCalibration(socket)) {
@@ -329,6 +338,7 @@ PipelineSchema PipelineImpl::getPipelineSchema(SerializationType type, bool incl
         info.alias = node->getAlias();
         info.parentId = node->parentId;
         info.deviceNode = !node->runOnHost();
+        info.builtInNode = node->isBuiltInNode();
         if(!node->runOnHost()) info.deviceId = defaultDeviceId;
 
         const auto& deviceNode = std::dynamic_pointer_cast<DeviceNode>(node);
@@ -1139,7 +1149,7 @@ void PipelineImpl::start() {
         defaultDevice->pipelinePtr = weak;
     }
 
-    const auto telemetrySchema = getPipelineSchema(SerializationType::JSON, false);
+    const auto telemetrySchema = anonymizeCustomNodesForTelemetry(getPipelineSchema(SerializationType::JSON, false));
     dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
                                                  "pipeline_start",
                                                  nlohmann::json{
@@ -1209,7 +1219,14 @@ void PipelineImpl::stop() {
 
     if(telemetryPipelineStartedAt.has_value()) {
         const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *telemetryPipelineStartedAt).count();
-        dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()), "pipeline_stop", nlohmann::json{{"duration_ms", durationMs}});
+        const auto telemetrySchema = anonymizeCustomNodesForTelemetry(getPipelineSchema(SerializationType::JSON, false));
+        dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
+                                                     "pipeline_stop",
+                                                     nlohmann::json{
+                                                         {"host_only", isHostOnly()},
+                                                         {"telemetrySchema", nlohmann::json(telemetrySchema).dump()},
+                                                         {"duration_ms", durationMs},
+                                                     });
         telemetryPipelineStartedAt.reset();
     }
 
