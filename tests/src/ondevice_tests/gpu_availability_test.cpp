@@ -1,5 +1,6 @@
 #include <catch2/catch_all.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <string>
 
@@ -27,13 +28,28 @@ int parseBoardRevisionNumber(const std::string& boardRev) {
     return value;
 }
 
+std::string normalizeModelName(std::string name) {
+    // Normalize to the same convention used by `dai::utility::parseProductName`
+    // (uppercase + spaces -> '-').
+    std::transform(name.begin(), name.end(), name.begin(), [](int c) { return std::toupper(c); });
+    std::replace(name.begin(), name.end(), ' ', '-');
+    // Some products include a dash between OAK and 4 (e.g. "OAK-4-PRO-FF").
+    // Normalize "OAK-4-*" to "OAK4-*", so model prefix checks are consistent.
+    if(name.rfind("OAK-4-", 0) == 0) {
+        name.erase(3, 1);  // remove '-' leaving "OAK4-..."
+    }
+    return name;
+}
+
 bool expectedHasGPU(dai::Device& device) {
     if(device.getPlatform() != dai::Platform::RVC4) return false;
 
-    const auto product = device.getProductName();  // Uppercase + hyphenated
-    const bool isOak4D = product.rfind("OAK4-D", 0) == 0;
-    const bool isOak4S = product.rfind("OAK4-S", 0) == 0;
-    if(!isOak4D && !isOak4S) return false;
+    const auto product = normalizeModelName(device.getProductName());
+    const bool isOak4D = product.size() >= 6 && product.compare(0, 6, "OAK4-D") == 0;
+    const bool isOak4S = product.size() >= 6 && product.compare(0, 6, "OAK4-S") == 0;
+    const bool isOak4Pro = product.size() >= 8 && product.compare(0, 8, "OAK4-PRO") == 0;
+    if(!isOak4D && !isOak4S && !isOak4Pro) return false;
+    if(isOak4S) return false;
 
     const auto eepromFactory = device.readFactoryCalibration().getEepromData();
     const auto eeprom = device.readCalibration().getEepromData();
@@ -43,7 +59,7 @@ bool expectedHasGPU(dai::Device& device) {
 
 }  // namespace
 
-TEST_CASE("Device.hasGPU matches expected policy", "[onhost]") {
+TEST_CASE("Device.hasGPU matches expected policy", "[ondevice]") {
     dai::Device device;
     const bool expected = expectedHasGPU(device);
     const bool actual = device.hasGPU();
