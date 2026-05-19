@@ -22,6 +22,7 @@
 #include "utility/Serialization.hpp"
 #include "utility/Telemetry.hpp"
 #include "utility/Uuid.hpp"
+#include "utility/depthai_nodes_names.hpp"
 
 // shared
 #include "depthai/pipeline/NodeConnectionSchema.hpp"
@@ -94,7 +95,9 @@ std::optional<PipelineAutoCalibrationMode> parseAutoCalibrationMode(std::string_
 
 PipelineSchema anonymizeCustomNodesForTelemetry(PipelineSchema schema) {
     for(auto& node : schema.nodes) {
-        if(!node.second.builtInNode) {
+        const auto isDepthaiNodesNode =
+            std::find(utility::depthaiNodesNames.begin(), utility::depthaiNodesNames.end(), node.second.name) != utility::depthaiNodesNames.end();
+        if(!node.second.builtInNode && !isDepthaiNodesNode) {
             node.second.name = "CUSTOM";
         }
     }
