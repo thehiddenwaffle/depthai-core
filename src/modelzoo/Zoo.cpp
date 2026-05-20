@@ -435,7 +435,8 @@ nlohmann::json ZooManager::fetchModelDownloadLinks() {
 }
 
 nlohmann::json ZooManager::fetchModelDetails(const std::string& modelId) const {
-    cpr::Response response = cpr::Get(cpr::Url{getModelDetailsEndpoint(modelId)}, makeHubHeaders(apiKey));
+    const auto timeoutMs = utility::getEnvAs<int>("DEPTHAI_ZOO_INTERNET_CHECK_TIMEOUT", 1000);
+    cpr::Response response = cpr::Get(cpr::Url{getModelDetailsEndpoint(modelId)}, makeHubHeaders(apiKey), cpr::Timeout{timeoutMs});
     if(response.status_code != cpr::status::HTTP_OK) {
         throw std::runtime_error(generateErrorMessageHub(response));
     }

@@ -339,6 +339,15 @@ TemporaryIdsManager& temporaryIdsManager() {
     return manager;
 }
 
+std::string safeTemporaryTelemetryHostId() {
+    try {
+        return getTemporaryTelemetryHostId();
+    } catch(const std::exception& ex) {
+        logger::debug("Failed to resolve temporary telemetry host id: {}", ex.what());
+        return "unknown";
+    }
+}
+
 }  // namespace
 
 struct TelemetrySharedState {
@@ -464,7 +473,7 @@ void TelemetrySharedState::event(std::string eventName, nlohmann::json propertie
     properties["source_product"] = "depthai";
     properties["source_component"] = "depthai-core";
 
-    const auto hostId = getTemporaryTelemetryHostId();
+    const auto hostId = safeTemporaryTelemetryHostId();
 
     const auto payload = nlohmann::json{
         {"event", eventName},
@@ -635,11 +644,17 @@ void TelemetrySharedState::flushOneBatch() {
             if(!properties.is_object()) {
                 properties = nlohmann::json::object();
             }
+            std::string distinctId = "unknown";
+            if(auto it = queuedEvent.find("distinct_id"); it != queuedEvent.end() && it->is_string()) {
+                distinctId = it->get<std::string>();
+            } else {
+                distinctId = safeTemporaryTelemetryHostId();
+            }
 
             nlohmann::json requestBody = {
                 {"api_key", apiKey},
                 {"event", queuedEvent.value("event", "")},
-                {"distinct_id", queuedEvent.value("distinct_id", getTemporaryTelemetryHostId())},
+                {"distinct_id", std::move(distinctId)},
                 {"properties", std::move(properties)},
             };
 
@@ -654,7 +669,8 @@ void TelemetrySharedState::flushOneBatch() {
                                       cpr::VerifySsl(true));
 
             const auto statusCode = response.status_code;
-            const bool retryable = static_cast<bool>(response.error) || (statusCode >= 300 && statusCode <= 399) || statusCode <= 0;
+            const bool retryable = static_cast<bool>(response.error) || statusCode <= 0 || (statusCode >= 300 && statusCode <= 399) || statusCode == 429
+                                   || (statusCode >= 500 && statusCode <= 599);
 
             if(response.error) {
                 logger::debug("Telemetry capture upload error {}: {}", static_cast<int>(response.error.code), response.error.message);

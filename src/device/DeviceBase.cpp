@@ -633,19 +633,19 @@ void DeviceBase::startTelemetryLifecycle(bool reconnect) {
         tmpDeviceId = utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
     }
     telemetryLifecycleStarted = true;
-    nlohmann::json properties{
-        {"device_model", lowercase(getProductName())},
-        {"platform", lowercase(getPlatformAsString())},
-        {"protocol", telemetryProtocolName(deviceInfo.protocol)},
-        {"protocol_speed", telemetryProtocolSpeed(deviceInfo.protocol, getUsbSpeed())},
-        {"standalone", isLoopbackDeviceName(deviceInfo.name)},
-    };
     try {
+        nlohmann::json properties{
+            {"device_model", lowercase(getProductName())},
+            {"platform", lowercase(getPlatformAsString())},
+            {"protocol", telemetryProtocolName(deviceInfo.protocol)},
+            {"protocol_speed", telemetryProtocolSpeed(deviceInfo.protocol, getUsbSpeed())},
+            {"standalone", isLoopbackDeviceName(deviceInfo.name)},
+        };
         properties["device_os_version"] = getOSVersion();
+        dai::utility::Telemetry::getInstance().event(*this, "depthai_device_constructor", std::move(properties));
     } catch(const std::exception& ex) {
-        pimpl->logger.debug("Failed to get device OS version for telemetry: {}", ex.what());
+        pimpl->logger.debug("Failed to emit device constructor telemetry: {}", ex.what());
     }
-    dai::utility::Telemetry::getInstance().event(*this, "depthai_device_constructor", std::move(properties));
 
     telemetryEventRunning = true;
     telemetryEventThread = std::thread(&DeviceBase::telemetryEventLoop, this);
