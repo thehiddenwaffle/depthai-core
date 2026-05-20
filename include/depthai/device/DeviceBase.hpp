@@ -1017,7 +1017,7 @@ class DeviceBase {
 	     * @note This is only meaningful on RVC4 platforms.
 	     * @returns True if supported, false otherwise
 	     */
-	    bool isGpuStereoSupported();
+	bool isGpuStereoSupported();
 
     /**
      * Returns the subset of device zoo models currently available on the device.
