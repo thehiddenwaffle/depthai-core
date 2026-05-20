@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <depthai/pipeline/DeviceNode.hpp>
 #include <depthai/pipeline/Subnode.hpp>
 #include <depthai/pipeline/datatype/GPUStereoConfig.hpp>
@@ -41,24 +43,21 @@ class GPUStereo : public DeviceNodeCRTP<DeviceNode, GPUStereo, GPUStereoProperti
      */
     GPUStereo& setRectification(bool enable);
 
-	    /**
-	     * @brief Set the confidence threshold for disparity filtering.
-	     *
-	     * Pixels with a matching cost above this threshold are invalidated.
-	     * @param threshold Value in range [0, 255]. 0 disables the filter. Values outside the range are clamped.
-	     */
-	    GPUStereo& setConfidenceThreshold(int threshold);
+    /**
+     * @brief Set the confidence threshold for disparity filtering.
+     *
+     * Pixels with a matching cost above this threshold are invalidated.
+     * @param threshold Value in range [0, 255]. 0 disables the filter. Values outside the range are clamped.
+     */
+    GPUStereo& setConfidenceThreshold(int threshold);
 
     Subnode<Sync> sync{*this, "sync"};
     Subnode<MessageDemux> messageDemux{*this, "messageDemux"};
-    Subnode<Rectification> rectification{*this, "rectification"};
+    std::unique_ptr<Subnode<Rectification>> rectification;
 
 #ifndef DEPTHAI_INTERNAL_DEVICE_BUILD_RVC4
     Input& left{sync->inputs["left"]};
     Input& right{sync->inputs["right"]};
-
-    Output& rectifiedLeft{rectification->output1};
-    Output& rectifiedRight{rectification->output2};
 #endif
 
     Input leftInternal{*this, {"leftFrameInternal", DEFAULT_GROUP, false, 1, {{{DatatypeEnum::ImgFrame, false}}}}};

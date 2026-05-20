@@ -8,13 +8,13 @@ TEST_CASE("GPUStereo rectification toggle updates Rectification subnode properti
 
     node->setRectification(false);
     {
-        auto& rectProps = static_cast<dai::RectificationProperties&>(node->rectification->getProperties());
+        auto& rectProps = (*node->rectification)->properties;
         REQUIRE(rectProps.enableRectification == false);
     }
 
     node->setRectification(true);
     {
-        auto& rectProps = static_cast<dai::RectificationProperties&>(node->rectification->getProperties());
+        auto& rectProps = (*node->rectification)->properties;
         REQUIRE(rectProps.enableRectification == true);
     }
 }
