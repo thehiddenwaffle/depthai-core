@@ -41,13 +41,13 @@ class GPUStereo : public DeviceNodeCRTP<DeviceNode, GPUStereo, GPUStereoProperti
      */
     GPUStereo& setRectification(bool enable);
 
-    /**
-     * @brief Set the confidence threshold for disparity filtering.
-     *
-     * Pixels with a matching cost above this threshold are invalidated.
-     * @param threshold Value in range [0, 255]. 0 disables the filter.
-     */
-    GPUStereo& setConfidenceThreshold(int threshold);
+	    /**
+	     * @brief Set the confidence threshold for disparity filtering.
+	     *
+	     * Pixels with a matching cost above this threshold are invalidated.
+	     * @param threshold Value in range [0, 255]. 0 disables the filter. Values outside the range are clamped.
+	     */
+	    GPUStereo& setConfidenceThreshold(int threshold);
 
     Subnode<Sync> sync{*this, "sync"};
     Subnode<MessageDemux> messageDemux{*this, "messageDemux"};
