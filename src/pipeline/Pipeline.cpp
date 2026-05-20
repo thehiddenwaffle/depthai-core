@@ -1279,12 +1279,22 @@ void PipelineImpl::stop() {
 
     if(telemetryPipelineStartedAt.has_value()) {
         const auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *telemetryPipelineStartedAt).count();
-        dai::utility::Telemetry::getInstance().event(Pipeline(shared_from_this()),
-                                                     "depthai_pipeline_stop",
-                                                     nlohmann::json{
-                                                         {"host_only", isHostOnly()},
-                                                         {"duration_ms", durationMs},
-                                                     });
+        nlohmann::json properties{
+            {"host_only", isHostOnly()},
+            {"pipeline_id", telemetryPipelineId},
+            {"duration_ms", durationMs},
+        };
+        try {
+            if(auto self = weak_from_this().lock()) {
+                dai::utility::Telemetry::getInstance().event(Pipeline(std::move(self)), "depthai_pipeline_stop", std::move(properties));
+            } else if(defaultDevice) {
+                dai::utility::Telemetry::getInstance().event(*defaultDevice, "depthai_pipeline_stop", std::move(properties));
+            } else {
+                dai::utility::Telemetry::getInstance().event("depthai_pipeline_stop", std::move(properties));
+            }
+        } catch(const std::exception& ex) {
+            Logging::getInstance().logger.debug("Failed to emit pipeline stop telemetry: {}", ex.what());
+        }
         telemetryPipelineStartedAt.reset();
     }
 

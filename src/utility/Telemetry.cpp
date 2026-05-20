@@ -32,6 +32,7 @@
 
 #ifdef DEPTHAI_ENABLE_CURL
     #include <cpr/cpr.h>
+    #include <curl/curl.h>
 #endif
 
 namespace dai {
@@ -419,6 +420,11 @@ TelemetrySharedState::TelemetrySharedState() {
     if(!enabled) {
         logger::debug("Telemetry disabled via DEPTHAI_TELEMETRY");
         return;
+    }
+
+    const auto curlInitResult = curl_global_init(CURL_GLOBAL_DEFAULT);
+    if(curlInitResult != CURLE_OK) {
+        logger::debug("Telemetry curl global init failed: {}", curl_easy_strerror(curlInitResult));
     }
 
     worker = std::thread([this]() { workerLoop(); });
