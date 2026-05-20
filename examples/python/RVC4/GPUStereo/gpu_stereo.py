@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """Minimal GPUStereo example — disparity from a stereo camera pair (RVC4 only)."""
 
+import argparse
 import cv2
 import depthai as dai
 import numpy as np
 
-device = dai.Device()
+parser = argparse.ArgumentParser(description="Minimal GPUStereo disparity example (RVC4 only)")
+parser.add_argument("--device", "-d", type=str, default=None, help="Device IP address/host (default: auto-discover)")
+args = parser.parse_args()
 
-if not device.hasGPU():
-    print("Exiting GPUStereo example: GPU not available on this device.")
+device = dai.Device(args.device) if args.device else dai.Device()
+
+if not device.isGpuStereoSupported():
+    print("Exiting GPUStereo example: GPUStereo is not supported on this device.")
     raise SystemExit(0)
 
 pipeline = dai.Pipeline(device)

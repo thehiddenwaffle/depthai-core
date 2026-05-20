@@ -8,8 +8,8 @@
 int main() {
     std::shared_ptr<dai::Device> device = std::make_shared<dai::Device>();
 
-    if(!device->hasGPU()) {
-        std::cout << "Exiting GPUStereo example: GPU not available on this device.\n";
+    if(!device->isGpuStereoSupported()) {
+        std::cout << "Exiting GPUStereo example: GPUStereo is not supported on this device.\n";
         return 0;
     }
 

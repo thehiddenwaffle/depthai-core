@@ -65,13 +65,7 @@ class GPUStereo : public DeviceNodeCRTP<DeviceNode, GPUStereo, GPUStereoProperti
     Input rightInternal{*this, {"rightFrameInternal", DEFAULT_GROUP, false, 1, {{{DatatypeEnum::ImgFrame, false}}}}};
 
     /**
-     * Outputs ImgFrame message that carries RAW8 / RAW16 encoded disparity data:
-     * RAW8 encoded (0..95) for standard mode;
-     * RAW8 encoded (0..190) for extended disparity mode;
-     * RAW16 encoded for subpixel disparity mode:
-     * - 0..760 for 3 fractional bits (by default)
-     * - 0..1520 for 4 fractional bits
-     * - 0..3040 for 5 fractional bits
+     * Outputs ImgFrame message that carries RAW16 encoded disparity data.
      */
     Output disparity{*this, {"disparity", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, false}}}}};
 
