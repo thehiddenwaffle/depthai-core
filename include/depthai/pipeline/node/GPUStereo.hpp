@@ -64,8 +64,24 @@ class GPUStereo : public DeviceNodeCRTP<DeviceNode, GPUStereo, GPUStereoProperti
     Input leftInternal{*this, {"leftFrameInternal", DEFAULT_GROUP, false, 1, {{{DatatypeEnum::ImgFrame, false}}}}};
     Input rightInternal{*this, {"rightFrameInternal", DEFAULT_GROUP, false, 1, {{{DatatypeEnum::ImgFrame, false}}}}};
 
+    /**
+     * Outputs ImgFrame message that carries RAW8 / RAW16 encoded disparity data:
+     * RAW8 encoded (0..95) for standard mode;
+     * RAW8 encoded (0..190) for extended disparity mode;
+     * RAW16 encoded for subpixel disparity mode:
+     * - 0..760 for 3 fractional bits (by default)
+     * - 0..1520 for 4 fractional bits
+     * - 0..3040 for 5 fractional bits
+     */
     Output disparity{*this, {"disparity", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, false}}}}};
+
+    /**
+     * Outputs ImgFrame message that carries RAW16 encoded (0..65535) depth data in depth units (millimeter by default).
+     *
+     * Non-determined / invalid depth values are set to 0
+     */
     Output depth{*this, {"depth", DEFAULT_GROUP, {{{DatatypeEnum::ImgFrame, false}}}}};
+
     /**
      * Outputs ImgFrame message that carries RAW8 confidence map.
      * Lower values mean lower confidence of the calculated disparity value.
