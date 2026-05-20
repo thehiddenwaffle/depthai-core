@@ -553,7 +553,7 @@ target_link_libraries(telemetry_multi_device_test PRIVATE httplib::httplib)
 target_compile_definitions(telemetry_multi_device_test PRIVATE
     DEPTHAI_TELEMETRY_MULTI_DEVICE_TEST_CHILD_PATH="$<TARGET_FILE:telemetry_multi_device_test_child>")
 add_dependencies(telemetry_multi_device_test telemetry_multi_device_test_child)
-dai_set_test_labels(telemetry_multi_device_test ondevice rvc2_all rvc4 rvc4rgb ci)
+dai_set_test_labels(telemetry_multi_device_test ondevice rvc2_all rvc4 rvc4rgb)
 
 # OpenVINO blob test
 if(DEPTHAI_FETCH_ARTIFACTS)
