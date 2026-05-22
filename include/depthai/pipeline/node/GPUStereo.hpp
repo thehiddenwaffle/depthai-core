@@ -43,14 +43,6 @@ class GPUStereo : public DeviceNodeCRTP<DeviceNode, GPUStereo, GPUStereoProperti
      */
     GPUStereo& setRectification(bool enable);
 
-    /**
-     * @brief Set the confidence threshold for disparity filtering.
-     *
-     * Pixels with a matching cost above this threshold are invalidated.
-     * @param threshold Value in range [0, 255]. 0 disables the filter. Values outside the range are clamped.
-     */
-    GPUStereo& setConfidenceThreshold(int threshold);
-
     Subnode<Sync> sync{*this, "sync"};
     Subnode<MessageDemux> messageDemux{*this, "messageDemux"};
     std::unique_ptr<Subnode<Rectification>> rectification;
@@ -87,6 +79,7 @@ class GPUStereo : public DeviceNodeCRTP<DeviceNode, GPUStereo, GPUStereoProperti
     /**
      * Initial config to use for GPUStereo.
      *
+     * Use this to configure startup parameters before the pipeline starts.
      * Note: Only `confidenceThreshold` is supported/exposed for this node.
      */
     std::shared_ptr<GPUStereoConfig> initialConfig = std::make_shared<GPUStereoConfig>();

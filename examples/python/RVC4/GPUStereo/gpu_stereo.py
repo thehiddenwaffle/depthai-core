@@ -24,7 +24,7 @@ gpu = pipeline.create(dai.node.GPUStereo)
 cam_left.requestOutput((1280, 800), type=dai.ImgFrame.Type.GRAY8, fps=30).link(gpu.left)
 cam_right.requestOutput((1280, 800), type=dai.ImgFrame.Type.GRAY8, fps=30).link(gpu.right)
 gpu.setRectification(True)
-gpu.setConfidenceThreshold(25)
+gpu.initialConfig.setConfidenceThreshold(25)
 
 disp_q = gpu.disparity.createOutputQueue()
 

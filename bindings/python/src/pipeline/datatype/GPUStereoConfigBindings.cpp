@@ -14,5 +14,9 @@ void bind_gpustereoconfig(pybind11::module& m, void* pCallstack) {
     callstack->pop();
     cb(m, pCallstack);
 
-    gpuStereoConfig.def(py::init<>()).def_readwrite("confidenceThreshold", &GPUStereoConfig::confidenceThreshold);
+    gpuStereoConfig.def(py::init<>())
+        .def("__repr__", &GPUStereoConfig::str)
+        .def("setConfidenceThreshold", &GPUStereoConfig::setConfidenceThreshold, py::arg("threshold"), DOC(dai, GPUStereoConfig, setConfidenceThreshold))
+        .def("getConfidenceThreshold", &GPUStereoConfig::getConfidenceThreshold, DOC(dai, GPUStereoConfig, getConfidenceThreshold))
+        .def_readwrite("confidenceThreshold", &GPUStereoConfig::confidenceThreshold, DOC(dai, GPUStereoConfig, confidenceThreshold));
 }

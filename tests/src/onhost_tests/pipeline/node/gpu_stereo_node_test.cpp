@@ -22,15 +22,15 @@ TEST_CASE("GPUStereo rectification toggle updates Rectification subnode properti
 TEST_CASE("GPUStereo confidence threshold is clamped to [0, 255]", "[GPUStereo]") {
     auto node = dai::node::GPUStereo::create();
 
-    node->setConfidenceThreshold(-1);
+    node->initialConfig->setConfidenceThreshold(-1);
     REQUIRE(node->initialConfig->confidenceThreshold == static_cast<std::uint8_t>(0));
 
-    node->setConfidenceThreshold(0);
+    node->initialConfig->setConfidenceThreshold(0);
     REQUIRE(node->initialConfig->confidenceThreshold == static_cast<std::uint8_t>(0));
 
-    node->setConfidenceThreshold(255);
+    node->initialConfig->setConfidenceThreshold(255);
     REQUIRE(node->initialConfig->confidenceThreshold == static_cast<std::uint8_t>(255));
 
-    node->setConfidenceThreshold(256);
+    node->initialConfig->setConfidenceThreshold(256);
     REQUIRE(node->initialConfig->confidenceThreshold == static_cast<std::uint8_t>(255));
 }

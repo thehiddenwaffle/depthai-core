@@ -1,6 +1,5 @@
 #include "depthai/pipeline/node/GPUStereo.hpp"
 
-#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 
@@ -29,11 +28,6 @@ GPUStereo& GPUStereo::setRectification(bool enable) {
     if(rectification) {
         (*rectification)->enableRectification(enable);
     }
-    return *this;
-}
-
-GPUStereo& GPUStereo::setConfidenceThreshold(int threshold) {
-    initialConfig->confidenceThreshold = static_cast<std::uint8_t>(std::clamp(threshold, 0, 255));
     return *this;
 }
 
