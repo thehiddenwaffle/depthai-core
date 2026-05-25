@@ -1528,6 +1528,10 @@ bool DeviceBase::hasGPU() {
     return pimpl->rpcCallChecked<bool>("hasGPU");
 }
 
+bool DeviceBase::isGpuStereoSupported() {
+    return hasGPU();
+}
+
 std::vector<DeviceModelZoo> DeviceBase::getSupportedDeviceModels() {
     return pimpl->rpcCallChecked<std::vector<DeviceModelZoo>>("getSupportedDeviceModels");
 }
