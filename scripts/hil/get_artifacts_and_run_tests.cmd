@@ -38,6 +38,8 @@ del /q "%ZIP%"
 
 call venv\Scripts\activate.bat
 python -c "import sys; print(sys.executable)"
+set "DEPTHAI_TELEMETRY_API_KEY=phc_zZmy6ywwrAmtdhXyZcy4fTmpdJxnh7QcR55XvZoZCmqz"
+set "DEPTHAI_TELEMETRY_URL=https://b.luxonis.com"
 
 if exist "%DEST%\tests" (
   echo [*] Running tests from %DEST%\tests

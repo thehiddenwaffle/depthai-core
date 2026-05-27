@@ -19,6 +19,8 @@ rm -rf venv
 python3.12 -m venv venv
 source venv/bin/activate
 export LC_ALL=en_US.UTF-8
+export DEPTHAI_TELEMETRY_API_KEY='phc_zZmy6ywwrAmtdhXyZcy4fTmpdJxnh7QcR55XvZoZCmqz'
+export DEPTHAI_TELEMETRY_URL='https://b.luxonis.com'
 locale
 
 if [ "$TEST_FLAVOR" == "vanilla" ]; then
