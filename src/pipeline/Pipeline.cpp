@@ -142,7 +142,8 @@ nlohmann::json makeTelemetryNodePropertiesJson(const nlohmann::json& properties)
         if(parsedProperties.is_object()) {
             return parsedProperties;
         }
-    } catch(const std::exception&) {
+    } catch(const std::exception& ex) {
+        logger::debug("Failed to parse node telemetry properties as JSON: {}", ex.what());
     }
     return nlohmann::json::object();
 }
