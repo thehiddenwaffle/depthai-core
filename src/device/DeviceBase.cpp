@@ -588,6 +588,21 @@ void DeviceBase::telemetryEventLoop() {
             } catch(const std::exception& ex) {
                 pimpl->logger.debug("Failed to parse telemetry event from device: {}", ex.what());
             }
+        } catch(const XLinkReadError& ex) {
+            {
+                std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
+                if(telemetryEventStream == stream) {
+                    telemetryEventStream.reset();
+                }
+            }
+            if(ex.status == X_LINK_COMMUNICATION_NOT_OPEN && !telemetryEventRunning) {
+                // Expected during shutdown once the XLink connection is closed
+                // while the telemetry thread is blocked in a stream read.
+                continue;
+            }
+            if(telemetryEventRunning) {
+                pimpl->logger.debug("Telemetry event thread exception caught: {}", ex.what());
+            }
         } catch(const std::exception& ex) {
             {
                 std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
