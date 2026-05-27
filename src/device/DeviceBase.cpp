@@ -619,7 +619,7 @@ void DeviceBase::telemetryPingLoop() {
 }
 
 void DeviceBase::startTelemetryLifecycle(bool reconnect) {
-    if(reconnect || dumpOnly || telemetryLifecycleStarted || !dai::utility::isTelemetryEnabled()) {
+    if(reconnect || dumpOnly || telemetryLifecycleStarted || !dai::utility::Telemetry::isTelemetryEnabled()) {
         return;
     }
 
@@ -630,7 +630,7 @@ void DeviceBase::startTelemetryLifecycle(bool reconnect) {
         pimpl->logger.debug("Failed to get anonymous telemetry id from device: {}", ex.what());
     }
     if(tmpDeviceId.empty()) {
-        tmpDeviceId = utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
+        tmpDeviceId = utility::Telemetry::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
     }
     telemetryLifecycleStarted = true;
     try {
@@ -1523,7 +1523,7 @@ std::string DeviceBase::getTemporaryTelemetryDeviceId() const {
     if(!tmpDeviceId.empty()) {
         return tmpDeviceId;
     }
-    return utility::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
+    return utility::Telemetry::getTemporaryTelemetryDeviceId(deviceInfo.getDeviceId());
 }
 
 std::optional<std::string> DeviceBase::getActiveTelemetryPipelineId() const {

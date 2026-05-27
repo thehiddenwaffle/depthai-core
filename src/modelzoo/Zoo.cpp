@@ -719,7 +719,7 @@ fs::path getModelFromZoo(
 
     if(internetIsAvailable) {
         responseJson = zooManager.fetchModelDownloadLinks();
-        if(utility::isTelemetryEnabled()) {
+        if(utility::Telemetry::isTelemetryEnabled()) {
             modelLoadedTelemetryProperties = zooManager.getModelLoadedTelemetryProperties(responseJson);
         }
     }

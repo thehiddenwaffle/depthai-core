@@ -15,6 +15,14 @@ namespace utility {
 class Telemetry {
    public:
     static Telemetry& getInstance();
+    static std::string getTemporaryTelemetryHostId();
+    static std::string getTemporaryTelemetryDeviceId(const std::string& mxid);
+    static std::string getTelemetrySessionId();
+    static std::string getTelemetryHostOS();
+    static std::string getTelemetryHostOSVersion();
+    static bool isTelemetryEnabled();
+    static void setTelemetryUsesPython(bool value);
+    static void emitDepthaiTelemetryLoadEvent();
 
     Telemetry(const Telemetry&) = delete;
     Telemetry& operator=(const Telemetry&) = delete;
@@ -38,15 +46,6 @@ class Telemetry {
     class Impl;
     std::unique_ptr<Impl> impl;
 };
-
-std::string getTemporaryTelemetryHostId();
-std::string getTemporaryTelemetryDeviceId(const std::string& mxid);
-std::string getTelemetrySessionId();
-std::string getTelemetryHostOS();
-std::string getTelemetryHostOSVersion();
-bool isTelemetryEnabled();
-void setTelemetryUsesPython(bool value);
-void emitDepthaiTelemetryLoadEvent();
 
 }  // namespace utility
 }  // namespace dai

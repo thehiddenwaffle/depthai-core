@@ -56,7 +56,7 @@ PYBIND11_EMBEDDED_MODULE(depthai, m)
 PYBIND11_MODULE(depthai, m)
 #endif
 {
-    dai::utility::setTelemetryUsesPython(true);
+    dai::utility::Telemetry::setTelemetryUsesPython(true);
 
 #ifdef DEPTHAI_HAVE_OPENCV_SUPPORT
     NDArrayConverter::init_numpy();

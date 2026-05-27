@@ -342,7 +342,7 @@ TemporaryIdsManager& temporaryIdsManager() {
 
 std::string safeTemporaryTelemetryHostId() {
     try {
-        return getTemporaryTelemetryHostId();
+        return Telemetry::getTemporaryTelemetryHostId();
     } catch(const std::exception& ex) {
         logger::debug("Failed to resolve temporary telemetry host id: {}", ex.what());
         return "unknown";
@@ -416,7 +416,7 @@ TelemetrySharedState::TelemetrySharedState() {
     }
 
 #ifdef DEPTHAI_ENABLE_CURL
-    enabled = isTelemetryEnabled();
+    enabled = Telemetry::isTelemetryEnabled();
     if(!enabled) {
         logger::debug("Telemetry disabled via DEPTHAI_TELEMETRY");
         return;
@@ -791,27 +791,27 @@ void addPipelineTelemetryProperties(const Pipeline& pipeline, nlohmann::json& pr
 
 }  // namespace
 
-std::string getTemporaryTelemetryHostId() {
+std::string Telemetry::getTemporaryTelemetryHostId() {
     return temporaryIdsManager().getHostId();
 }
 
-std::string getTemporaryTelemetryDeviceId(const std::string& mxid) {
+std::string Telemetry::getTemporaryTelemetryDeviceId(const std::string& mxid) {
     return temporaryIdsManager().getDeviceId(mxid);
 }
 
-std::string getTelemetrySessionId() {
+std::string Telemetry::getTelemetrySessionId() {
     return telemetrySharedState().sessionKey;
 }
 
-std::string getTelemetryHostOS() {
+std::string Telemetry::getTelemetryHostOS() {
     return getTelemetryHostOSImpl();
 }
 
-std::string getTelemetryHostOSVersion() {
+std::string Telemetry::getTelemetryHostOSVersion() {
     return dai::platform::getOSVersion();
 }
 
-bool isTelemetryEnabled() {
+bool Telemetry::isTelemetryEnabled() {
     auto value = trim(readEnv("DEPTHAI_TELEMETRY"));
     if(value.empty()) {
         return true;
@@ -821,11 +821,11 @@ bool isTelemetryEnabled() {
     return value != "0" && value != "false" && value != "off" && value != "no";
 }
 
-void setTelemetryUsesPython(bool value) {
+void Telemetry::setTelemetryUsesPython(bool value) {
     telemetryUsesPython.store(value);
 }
 
-void emitDepthaiTelemetryLoadEvent() {
+void Telemetry::emitDepthaiTelemetryLoadEvent() {
     Telemetry::getInstance().event("depthai_load",
                                    nlohmann::json{
                                        {"host_os", getTelemetryHostOS()},
