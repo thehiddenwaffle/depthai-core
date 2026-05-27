@@ -49,13 +49,9 @@ XLinkStream& XLinkStream::operator=(XLinkStream&& other) {
 }
 
 XLinkStream::~XLinkStream() {
-    close();
-}
-
-void XLinkStream::close() {
+    // If streamId != invalid (eg. wasn't moved to another XLinkStream)
     if(streamId != INVALID_STREAM_ID) {
         XLinkCloseStream(streamId);
-        streamId = INVALID_STREAM_ID;
     }
 }
 

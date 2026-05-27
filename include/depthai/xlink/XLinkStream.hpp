@@ -100,7 +100,6 @@ class XLinkStream {
     // deprecated; unsafe leads to memory violations and/or memory leaks
     [[deprecated]] void readRawRelease() const;
 
-    void close();
     streamId_t getStreamId() const;
     std::string getStreamName() const;
 };

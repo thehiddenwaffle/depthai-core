@@ -659,10 +659,6 @@ void DeviceBase::stopTelemetryLifecycle() {
     }
 
     telemetryEventRunning = false;
-    {
-        std::lock_guard<std::mutex> lock(telemetryEventStreamMtx);
-        if(telemetryEventStream) telemetryEventStream->close();
-    }
     if(telemetryEventThread.joinable()) {
         telemetryEventThread.join();
     }
