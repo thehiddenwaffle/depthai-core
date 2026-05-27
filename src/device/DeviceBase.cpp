@@ -1850,11 +1850,15 @@ LogLevel DeviceBase::getLogOutputLevel() {
 }
 
 bool DeviceBase::setIrLaserDotProjectorIntensity(float intensity, int mask) {
-    return pimpl->rpcCallChecked<bool>("setIrLaserDotProjectorBrightness", intensity, mask, true);
+    auto success = pimpl->rpcCallChecked<bool>("setIrLaserDotProjectorBrightness", intensity, mask, true);
+    dai::utility::Telemetry::getInstance().event(*this, "depthai_ir_intensity", nlohmann::json{{"value", intensity}});
+    return success;
 }
 
 bool DeviceBase::setIrFloodLightIntensity(float intensity, int mask) {
-    return pimpl->rpcCallChecked<bool>("setIrFloodLightBrightness", intensity, mask, true);
+    auto success = pimpl->rpcCallChecked<bool>("setIrFloodLightBrightness", intensity, mask, true);
+    dai::utility::Telemetry::getInstance().event(*this, "depthai_flood_intensity", nlohmann::json{{"value", intensity}});
+    return success;
 }
 
 std::vector<std::tuple<std::string, int, int>> DeviceBase::getIrDrivers() {

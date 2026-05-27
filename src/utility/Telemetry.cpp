@@ -12,8 +12,10 @@
 #include <deque>
 #include <exception>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <iomanip>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <random>
@@ -190,6 +192,14 @@ std::string getTelemetryHostOSImpl() {
     return lowercase(platformName);
 }
 
+std::string getTelemetryHostOS() {
+    return getTelemetryHostOSImpl();
+}
+
+std::string getTelemetryHostOSVersion() {
+    return dai::platform::getOSVersion();
+}
+
 std::filesystem::path tmpIdsPath() {
     return defaultTelemetryBaseDir() / TMP_IDS_FILENAME;
 }
@@ -342,7 +352,7 @@ TemporaryIdsManager& temporaryIdsManager() {
 
 std::string safeTemporaryTelemetryHostId() {
     try {
-        return Telemetry::getTemporaryTelemetryHostId();
+        return temporaryIdsManager().getHostId();
     } catch(const std::exception& ex) {
         logger::debug("Failed to resolve temporary telemetry host id: {}", ex.what());
         return "unknown";
@@ -365,8 +375,10 @@ struct TelemetrySharedState {
     std::chrono::seconds flushInterval{DEFAULT_FLUSH_INTERVAL};
 
     std::deque<std::string> queuedFiles;
+    std::vector<std::shared_ptr<Telemetry::AggregateMetricsCallback>> aggregateMetricsCallbacks;
 
     std::mutex mutex;
+    std::mutex aggregateMetricsMtx;
     std::condition_variable condition;
     std::thread worker;
     bool stopRequested{false};
@@ -378,6 +390,7 @@ struct TelemetrySharedState {
     ~TelemetrySharedState();
 
     void event(std::string eventName, nlohmann::json properties);
+    void addAggregateMetrics(Telemetry::AggregateMetricsCallback functionLikeCb);
     void loadQueueFromDisk();
     void workerLoop();
     void flushOneBatch();
@@ -385,6 +398,7 @@ struct TelemetrySharedState {
     void removeFileFromQueueLocked(const std::string& filename);
     void deleteFilesLocked(const std::vector<std::string>& filenames);
     void deleteFileOnDisk(const std::string& filename);
+    void applyAggregateMetrics(nlohmann::json& properties);
 };
 
 TelemetrySharedState& telemetrySharedState() {
@@ -396,6 +410,10 @@ class Telemetry::Impl {
    public:
     void event(std::string eventName, nlohmann::json properties) {
         telemetrySharedState().event(std::move(eventName), std::move(properties));
+    }
+
+    void addAggregateMetrics(Telemetry::AggregateMetricsCallback functionLikeCb) {
+        telemetrySharedState().addAggregateMetrics(std::move(functionLikeCb));
     }
 };
 
@@ -463,6 +481,13 @@ void TelemetrySharedState::event(std::string eventName, nlohmann::json propertie
         logger::warn("Telemetry properties for '{}' must be a JSON object. Dropping invalid properties.", eventName);
         properties = nlohmann::json::object();
     }
+    if(eventName == "depthai_ping") {
+        applyAggregateMetrics(properties);
+        if(!properties.is_object()) {
+            logger::warn("Telemetry aggregate metrics for '{}' produced invalid properties. Dropping invalid properties.", eventName);
+            properties = nlohmann::json::object();
+        }
+    }
 
     if(!properties.contains("$lib")) {
         properties["$lib"] = "depthai-core";
@@ -524,6 +549,35 @@ void TelemetrySharedState::event(std::string eventName, nlohmann::json propertie
     }
 
     condition.notify_one();
+}
+
+void TelemetrySharedState::addAggregateMetrics(Telemetry::AggregateMetricsCallback functionLikeCb) {
+    if(!functionLikeCb) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(aggregateMetricsMtx);
+    aggregateMetricsCallbacks.push_back(std::make_shared<Telemetry::AggregateMetricsCallback>(std::move(functionLikeCb)));
+}
+
+void TelemetrySharedState::applyAggregateMetrics(nlohmann::json& properties) {
+    std::vector<std::shared_ptr<Telemetry::AggregateMetricsCallback>> callbacks;
+    {
+        std::lock_guard<std::mutex> lock(aggregateMetricsMtx);
+        callbacks = aggregateMetricsCallbacks;
+    }
+
+    for(const auto& callback : callbacks) {
+        try {
+            if(callback && *callback) {
+                (*callback)(properties);
+            }
+        } catch(const std::exception& ex) {
+            logger::debug("Telemetry aggregate metrics callback failed: {}", ex.what());
+        } catch(...) {
+            logger::debug("Telemetry aggregate metrics callback failed with an unknown exception");
+        }
+    }
 }
 
 void TelemetrySharedState::loadQueueFromDisk() {
@@ -791,24 +845,8 @@ void addPipelineTelemetryProperties(const Pipeline& pipeline, nlohmann::json& pr
 
 }  // namespace
 
-std::string Telemetry::getTemporaryTelemetryHostId() {
-    return temporaryIdsManager().getHostId();
-}
-
 std::string Telemetry::getTemporaryTelemetryDeviceId(const std::string& mxid) {
     return temporaryIdsManager().getDeviceId(mxid);
-}
-
-std::string Telemetry::getTelemetrySessionId() {
-    return telemetrySharedState().sessionKey;
-}
-
-std::string Telemetry::getTelemetryHostOS() {
-    return getTelemetryHostOSImpl();
-}
-
-std::string Telemetry::getTelemetryHostOSVersion() {
-    return dai::platform::getOSVersion();
 }
 
 bool Telemetry::isTelemetryEnabled() {
@@ -853,6 +891,12 @@ void Telemetry::event(const Pipeline& pipeline, std::string eventName, nlohmann:
     addPipelineTelemetryProperties(pipeline, properties);
     if(impl) {
         impl->event(std::move(eventName), std::move(properties));
+    }
+}
+
+void Telemetry::addAggregateMetrics(AggregateMetricsCallback functionLikeCb) {
+    if(impl) {
+        impl->addAggregateMetrics(std::move(functionLikeCb));
     }
 }
 
