@@ -1742,10 +1742,10 @@ float DeviceBase::getSystemInformationLoggingRate() {
 }
 
 bool DeviceBase::isEepromAvailable() {
-    return isEepromAvailable(CameraBoardSocket::AUTO);
+    return pimpl->rpcCallChecked<bool>("isEepromAvailable", CameraBoardSocket::AUTO);
 }
 
-bool DeviceBase::isEepromAvailable(CameraBoardSocket camSocket) {
+bool DeviceBase::isCBAEepromAvailable(CameraBoardSocket camSocket) {
     return pimpl->rpcCallChecked<bool>("isEepromAvailable", camSocket);
 }
 
@@ -1754,12 +1754,18 @@ bool DeviceBase::isCalibrationAvailable() {
 }
 
 bool DeviceBase::tryFlashCalibration(CalibrationHandler calibrationDataHandler) {
-    return tryFlashCalibration(calibrationDataHandler, CameraBoardSocket::AUTO);
+    try {
+        flashCalibration(calibrationDataHandler);
+    } catch(const EepromError& e) {
+        pimpl->logger.error("Failed to flash calibration: {}", e.what());
+        return false;
+    }
+    return true;
 }
 
-bool DeviceBase::tryFlashCalibration(CalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket) {
+bool DeviceBase::tryFlashCBACalibration(CalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket) {
     try {
-        flashCalibration(calibrationDataHandler, camSocket);
+        flashCBACalibration(calibrationDataHandler, camSocket);
     } catch(const EepromError& e) {
         pimpl->logger.error("Failed to flash calibration: {}", e.what());
         return false;
@@ -1768,10 +1774,26 @@ bool DeviceBase::tryFlashCalibration(CalibrationHandler calibrationDataHandler, 
 }
 
 void DeviceBase::flashCalibration(CalibrationHandler calibrationDataHandler) {
-    return flashCalibration(calibrationDataHandler, CameraBoardSocket::AUTO);
+    bool factoryPermissions = false;
+    bool protectedPermissions = false;
+    getFlashingPermissions(factoryPermissions, protectedPermissions);
+    pimpl->logger.debug("Flashing calibration. Factory permissions {}, Protected permissions {}", factoryPermissions, protectedPermissions);
+
+    /* if(!calibrationDataHandler.validateCameraArray()) {
+        throw std::runtime_error("Failed to validate the extrinsics connection. Enable debug mode for more information.");
+    } */
+
+    bool success;
+    std::string errorMsg;
+    std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>(
+        "storeToEeprom", calibrationDataHandler.getEepromData(), factoryPermissions, protectedPermissions, CameraBoardSocket::AUTO);
+
+    if(!success) {
+        throw EepromError(errorMsg);
+    }
 }
 
-void DeviceBase::flashCalibration(CalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket) {
+void DeviceBase::flashCBACalibration(CalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket) {
     bool factoryPermissions = false;
     bool protectedPermissions = false;
     getFlashingPermissions(factoryPermissions, protectedPermissions);
@@ -1830,24 +1852,37 @@ CalibrationHandler DeviceBase::getCalibration() {
 }
 
 CalibrationHandler DeviceBase::readCalibration() {
-    return readCalibration(CameraBoardSocket::AUTO);
-}
-
-CalibrationHandler DeviceBase::readCalibration(CameraBoardSocket camSocket) {
     dai::EepromData eepromData{};
     try {
-        return readCalibration2(camSocket);
+        return readCalibration2();
     } catch(const EepromError&) {
         // ignore - use default
     }
     return CalibrationHandler(eepromData);
 }
 
-CalibrationHandler DeviceBase::readCalibration2() {
-    return readCalibration2(CameraBoardSocket::AUTO);
+CBACalibrationHandler DeviceBase::readCBACalibration(CameraBoardSocket camSocket) {
+    dai::EepromData eepromData{};
+    try {
+        return readCBACalibration2(camSocket);
+    } catch(const EepromError&) {
+        // ignore - use default
+    }
+    return CBACalibrationHandler(eepromData, camSocket);
 }
 
-CalibrationHandler DeviceBase::readCalibration2(CameraBoardSocket camSocket) {
+CalibrationHandler DeviceBase::readCalibration2() {
+    bool success;
+    std::string errorMsg;
+    dai::EepromData eepromData;
+    std::tie(success, errorMsg, eepromData) = pimpl->rpcCallChecked<std::tuple<bool, std::string, dai::EepromData>>("readFromEeprom", CameraBoardSocket::AUTO);
+    if(!success) {
+        throw EepromError(errorMsg);
+    }
+    return CalibrationHandler(eepromData);
+}
+
+CBACalibrationHandler DeviceBase::readCBACalibration2(CameraBoardSocket camSocket) {
     bool success;
     std::string errorMsg;
     dai::EepromData eepromData;
@@ -1855,22 +1890,41 @@ CalibrationHandler DeviceBase::readCalibration2(CameraBoardSocket camSocket) {
     if(!success) {
         throw EepromError(errorMsg);
     }
-    return CalibrationHandler(eepromData);
+    return CBACalibrationHandler(eepromData, camSocket);
 }
 
 CalibrationHandler DeviceBase::readCalibrationOrDefault() {
-    return readCalibrationOrDefault(CameraBoardSocket::AUTO);
+    return readCalibration();
 }
 
-CalibrationHandler DeviceBase::readCalibrationOrDefault(CameraBoardSocket camSocket) {
-    return readCalibration(camSocket);
+CBACalibrationHandler DeviceBase::readCBACalibrationOrDefault(CameraBoardSocket camSocket) {
+    return readCBACalibration(camSocket);
 }
 
 void DeviceBase::flashFactoryCalibration(CalibrationHandler calibrationDataHandler) {
-    return flashFactoryCalibration(calibrationDataHandler, CameraBoardSocket::AUTO);
+    bool factoryPermissions = false;
+    bool protectedPermissions = false;
+    getFlashingPermissions(factoryPermissions, protectedPermissions);
+    pimpl->logger.debug("Flashing factory calibration. Factory permissions {}, Protected permissions {}", factoryPermissions, protectedPermissions);
+
+    if(!factoryPermissions) {
+        throw std::runtime_error("Calling factory API is not allowed in current configuration");
+    }
+
+    /* if(!calibrationDataHandler.validateCameraArray()) {
+        throw std::runtime_error("Failed to validate the extrinsics connection. Enable debug mode for more information.");
+    } */
+
+    bool success;
+    std::string errorMsg;
+    std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>(
+        "storeToEepromFactory", calibrationDataHandler.getEepromData(), factoryPermissions, protectedPermissions, CameraBoardSocket::AUTO);
+    if(!success) {
+        throw EepromError(errorMsg);
+    }
 }
 
-void DeviceBase::flashFactoryCalibration(CalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket) {
+void DeviceBase::flashFactoryCBACalibration(CalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket) {
     bool factoryPermissions = false;
     bool protectedPermissions = false;
     getFlashingPermissions(factoryPermissions, protectedPermissions);
@@ -1894,10 +1948,18 @@ void DeviceBase::flashFactoryCalibration(CalibrationHandler calibrationDataHandl
 }
 
 CalibrationHandler DeviceBase::readFactoryCalibration() {
-    return readFactoryCalibration(CameraBoardSocket::AUTO);
+    bool success;
+    std::string errorMsg;
+    dai::EepromData eepromData;
+    std::tie(success, errorMsg, eepromData) =
+        pimpl->rpcCallChecked<std::tuple<bool, std::string, dai::EepromData>>("readFromEepromFactory", CameraBoardSocket::AUTO);
+    if(!success) {
+        throw EepromError(errorMsg);
+    }
+    return CalibrationHandler(eepromData);
 }
 
-CalibrationHandler DeviceBase::readFactoryCalibration(CameraBoardSocket camSocket) {
+CBACalibrationHandler DeviceBase::readFactoryCBACalibration(CameraBoardSocket camSocket) {
     bool success;
     std::string errorMsg;
     dai::EepromData eepromData;
@@ -1905,27 +1967,38 @@ CalibrationHandler DeviceBase::readFactoryCalibration(CameraBoardSocket camSocke
     if(!success) {
         throw EepromError(errorMsg);
     }
-    return CalibrationHandler(eepromData);
+    return CBACalibrationHandler(eepromData, camSocket);
 }
 CalibrationHandler DeviceBase::readFactoryCalibrationOrDefault() {
-    return readFactoryCalibrationOrDefault(CameraBoardSocket::AUTO);
-}
-
-CalibrationHandler DeviceBase::readFactoryCalibrationOrDefault(CameraBoardSocket camSocket) {
     dai::EepromData eepromData{};
     try {
-        return readFactoryCalibration(camSocket);
+        return readFactoryCalibration();
     } catch(const EepromError&) {
         // ignore - use default
     }
     return CalibrationHandler(eepromData);
 }
 
-void DeviceBase::factoryResetCalibration() {
-    return factoryResetCalibration(CameraBoardSocket::AUTO);
+CBACalibrationHandler DeviceBase::readFactoryCBACalibrationOrDefault(CameraBoardSocket camSocket) {
+    dai::EepromData eepromData{};
+    try {
+        return readFactoryCBACalibration(camSocket);
+    } catch(const EepromError&) {
+        // ignore - use default
+    }
+    return CBACalibrationHandler(eepromData, camSocket);
 }
 
-void DeviceBase::factoryResetCalibration(CameraBoardSocket camSocket) {
+void DeviceBase::factoryResetCalibration() {
+    bool success;
+    std::string errorMsg;
+    std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>("eepromFactoryReset", CameraBoardSocket::AUTO);
+    if(!success) {
+        throw EepromError(errorMsg);
+    }
+}
+
+void DeviceBase::factoryResetCBACalibration(CameraBoardSocket camSocket) {
     bool success;
     std::string errorMsg;
     std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>("eepromFactoryReset", camSocket);
@@ -2000,10 +2073,25 @@ std::vector<std::uint8_t> DeviceBase::readFactoryCalibrationRaw() {
 }
 
 void DeviceBase::flashEepromClear() {
-    return flashEepromClear(CameraBoardSocket::AUTO);
+    bool factoryPermissions = false;
+    bool protectedPermissions = false;
+    getFlashingPermissions(factoryPermissions, protectedPermissions);
+    pimpl->logger.debug("Clearing User EEPROM contents. Factory permissions {}, Protected permissions {}", factoryPermissions, protectedPermissions);
+
+    if(!protectedPermissions) {
+        throw std::runtime_error("Calling EEPROM clear API is not allowed in current configuration");
+    }
+
+    bool success;
+    std::string errorMsg;
+    std::tie(success, errorMsg) =
+        pimpl->rpcCallChecked<std::tuple<bool, std::string>>("eepromClear", protectedPermissions, factoryPermissions, CameraBoardSocket::AUTO);
+    if(!success) {
+        throw EepromError(errorMsg);
+    }
 }
 
-void DeviceBase::flashEepromClear(CameraBoardSocket camSocket) {
+void DeviceBase::flashCBAEepromClear(CameraBoardSocket camSocket) {
     bool factoryPermissions = false;
     bool protectedPermissions = false;
     getFlashingPermissions(factoryPermissions, protectedPermissions);
@@ -2022,10 +2110,25 @@ void DeviceBase::flashEepromClear(CameraBoardSocket camSocket) {
 }
 
 void DeviceBase::flashFactoryEepromClear() {
-    return flashFactoryEepromClear(CameraBoardSocket::AUTO);
+    bool factoryPermissions = false;
+    bool protectedPermissions = false;
+    getFlashingPermissions(factoryPermissions, protectedPermissions);
+    pimpl->logger.debug("Clearing Factory EEPROM contents. Factory permissions {}, Protected permissions {}", factoryPermissions, protectedPermissions);
+
+    if(!protectedPermissions || !factoryPermissions) {
+        throw std::runtime_error("Calling factory EEPROM clear API is not allowed in current configuration");
+    }
+
+    bool success;
+    std::string errorMsg;
+    std::tie(success, errorMsg) =
+        pimpl->rpcCallChecked<std::tuple<bool, std::string>>("eepromFactoryClear", protectedPermissions, factoryPermissions, CameraBoardSocket::AUTO);
+    if(!success) {
+        throw EepromError(errorMsg);
+    }
 }
 
-void DeviceBase::flashFactoryEepromClear(CameraBoardSocket camSocket) {
+void DeviceBase::flashFactoryCBAEepromClear(CameraBoardSocket camSocket) {
     bool factoryPermissions = false;
     bool protectedPermissions = false;
     getFlashingPermissions(factoryPermissions, protectedPermissions);
