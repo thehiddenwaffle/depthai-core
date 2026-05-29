@@ -641,7 +641,7 @@ void DeviceBindings::bind(pybind11::module& m, void* pCallstack) {
             DOC(dai, DeviceBase, tryFlashCalibration))
         .def(
             "tryFlashCBACalibration",
-            [](DeviceBase& d, CalibrationHandler calibrationDataHandler, dai::CameraBoardSocket camSocket) {
+            [](DeviceBase& d, CBACalibrationHandler calibrationDataHandler, dai::CameraBoardSocket camSocket) {
                 py::gil_scoped_release release;
                 return d.tryFlashCBACalibration(calibrationDataHandler, camSocket);
             },
@@ -754,7 +754,7 @@ void DeviceBindings::bind(pybind11::module& m, void* pCallstack) {
             DOC(dai, DeviceBase, flashCalibration))
         .def(
             "flashCBACalibration",
-            [](DeviceBase& d, CalibrationHandler ch, dai::CameraBoardSocket camSocket) {
+            [](DeviceBase& d, CBACalibrationHandler ch, dai::CameraBoardSocket camSocket) {
                 py::gil_scoped_release release;
                 return d.flashCBACalibration(ch, camSocket);
             },
@@ -829,7 +829,7 @@ void DeviceBindings::bind(pybind11::module& m, void* pCallstack) {
             DOC(dai, DeviceBase, flashFactoryCalibration))
         .def(
             "flashFactoryCBACalibration",
-            [](DeviceBase& d, CalibrationHandler ch, dai::CameraBoardSocket camSocket) {
+            [](DeviceBase& d, CBACalibrationHandler ch, dai::CameraBoardSocket camSocket) {
                 py::gil_scoped_release release;
                 return d.flashFactoryCBACalibration(ch, camSocket);
             },

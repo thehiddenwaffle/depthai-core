@@ -767,4 +767,56 @@ class CalibrationHandler {
     LengthUnit getEepromTranslationUnits() const;
 };
 
+/**
+ * CBACalibrationHandler is a single-camera calibration interface for
+ * calibration data read from a CBA EEPROM.
+ *
+ * It preserves the underlying EepromData layout, including the cameraData map,
+ * but camera-specific APIs use CameraBoardSocket::CBA as the logical
+ * single-camera data key without requiring the caller to pass it again.
+ */
+class CBACalibrationHandler : public CalibrationHandler {
+   public:
+    explicit CBACalibrationHandler(CameraBoardSocket cbaSocket);
+    explicit CBACalibrationHandler(EepromData eepromData, CameraBoardSocket cbaSocket, std::optional<bool> validateCalibration = std::nullopt);
+
+    static CBACalibrationHandler fromJson(nlohmann::json eepromDataJson, CameraBoardSocket cbaSocket, std::optional<bool> validateCalibration = std::nullopt);
+
+    CameraBoardSocket getCBASocket() const;
+    bool hasCameraCalibration() const;
+
+    std::vector<std::vector<float>> getCameraIntrinsics(int resizeWidth = -1,
+                                                        int resizeHeight = -1,
+                                                        Point2f topLeftPixelId = Point2f(),
+                                                        Point2f bottomRightPixelId = Point2f(),
+                                                        bool keepAspectRatio = true) const;
+    std::vector<std::vector<float>> getCameraIntrinsics(Size2f destShape,
+                                                        Point2f topLeftPixelId = Point2f(),
+                                                        Point2f bottomRightPixelId = Point2f(),
+                                                        bool keepAspectRatio = true) const;
+    std::vector<std::vector<float>> getCameraIntrinsics(std::tuple<int, int> destShape,
+                                                        Point2f topLeftPixelId = Point2f(),
+                                                        Point2f bottomRightPixelId = Point2f(),
+                                                        bool keepAspectRatio = true) const;
+    std::tuple<std::vector<std::vector<float>>, int, int> getDefaultIntrinsics() const;
+    uint32_t getSourceHeight() const;
+    uint32_t getSourceWidth() const;
+    std::vector<float> getDistortionCoefficients() const;
+    float getFov(bool useSpec = true) const;
+    uint8_t getLensPosition() const;
+    CameraModel getDistortionModel() const;
+
+    void setCameraIntrinsics(std::vector<std::vector<float>> intrinsics, Size2f frameSize);
+    void setCameraIntrinsics(std::vector<std::vector<float>> intrinsics, int width, int height);
+    void setCameraIntrinsics(std::vector<std::vector<float>> intrinsics, std::tuple<int, int> frameSize);
+    void setDistortionCoefficients(std::vector<float> distortionCoefficients);
+    void setFov(float hfov);
+    void setLensPosition(uint8_t lensPosition);
+    void setCameraType(CameraModel cameraModel);
+
+   private:
+    static constexpr CameraBoardSocket cameraDataSocket = CameraBoardSocket::CBA;
+    CameraBoardSocket cbaSocket;
+};
+
 }  // namespace dai

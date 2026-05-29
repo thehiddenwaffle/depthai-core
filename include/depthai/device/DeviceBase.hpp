@@ -724,12 +724,12 @@ class DeviceBase {
     /**
      * Stores the Calibration and Device information to the CBA EEPROM
      *
-     * @param calibrationObj CalibrationHandler object which is loaded with calibration information.
+     * @param calibrationObj CBACalibrationHandler object which is loaded with calibration information.
      * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
      *
      * @return true on successful flash, false on failure
      */
-    bool tryFlashCBACalibration(CalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket);
+    bool tryFlashCBACalibration(CBACalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket);
 
     /**
      * Stores the Calibration and Device information to the Device EEPROM
@@ -743,10 +743,10 @@ class DeviceBase {
      * Stores the Calibration and Device information to the CBA EEPROM
      *
      * @throws std::runtime_error if failed to flash the calibration
-     * @param calibrationObj CalibrationHandler object which is loaded with calibration information.
+     * @param calibrationObj CBACalibrationHandler object which is loaded with calibration information.
      * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
      */
-    void flashCBACalibration(CalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket);
+    void flashCBACalibration(CBACalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket);
 
     /**
      * Sets the Calibration at runtime. This is not persistent and will be lost after device reset.
@@ -864,13 +864,13 @@ class DeviceBase {
      * Stores the Calibration and Device information to the CBA EEPROM in Factory area
      * To perform this action, correct env variable must be set
      *
-     * @param calibrationHandler CalibrationHandler
+     * @param calibrationHandler CBACalibrationHandler
      * @param camSocket CameraBoardSocket of the CBA (Camera Board Assembly)
      *
      * @throws std::runtime_error if failed to flash the calibration
      * @return True on successful flash, false on failure
      */
-    void flashFactoryCBACalibration(CalibrationHandler calibrationHandler, CameraBoardSocket camSocket);
+    void flashFactoryCBACalibration(CBACalibrationHandler calibrationHandler, CameraBoardSocket camSocket);
 
     /**
      * Destructive action, deletes User area EEPROM contents
