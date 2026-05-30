@@ -93,9 +93,9 @@ class EncodedFrame : public Buffer, public ProtoSerializable {
     float getFps() const;
 
     /**
-     * Retrieves sensor temperature in degrees Celsius. Returns NaN if not available.
+     * Retrieves sensor temperature in degrees Celsius. Returns an empty optional if not available.
      */
-    float getSensorTemperature() const;
+    std::optional<float> getSensorTemperature() const;
 
     /**
      * Retrieves the encoding quality

@@ -139,7 +139,7 @@ float ImgFrame::getFps() const {
     return cam.fps;
 }
 
-float ImgFrame::getSensorTemperature() const {
+std::optional<float> ImgFrame::getSensorTemperature() const {
     return cam.sensorTemperatureC;
 }
 

@@ -1,11 +1,11 @@
 #pragma once
 
 #include <chrono>
-#include <limits>
 #include <unordered_map>
 #include <vector>
 
 // project
+#include "depthai/common/optional.hpp"
 #include "depthai/common/CameraExposureOffset.hpp"
 #include "depthai/config/config.hpp"
 #include "depthai/pipeline/datatype/Buffer.hpp"
@@ -211,9 +211,9 @@ class ImgFrame : public Buffer, public ProtoSerializable {
     float getFps() const;
 
     /**
-     * Retrieves sensor temperature in degrees Celsius. Returns NaN if not available.
+     * Retrieves sensor temperature in degrees Celsius. Returns an empty optional if not available.
      */
-    float getSensorTemperature() const;
+    std::optional<float> getSensorTemperature() const;
 
     /**
      * Retrieves image transformation data
@@ -745,7 +745,7 @@ class ImgFrame : public Buffer, public ProtoSerializable {
         Fsync fsync = Fsync::NONE;
         int32_t sensorMode = -1;
         float fps = -1.0f;
-        float sensorTemperatureC = std::numeric_limits<float>::quiet_NaN();
+        std::optional<float> sensorTemperatureC = std::nullopt;
 
         DEPTHAI_SERIALIZE(CameraSettings, exposureTimeUs, sensitivityIso, lensPosition, wbColorTemp, lensPositionRaw, fsync, sensorMode, fps, sensorTemperatureC);
     };
