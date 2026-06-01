@@ -777,12 +777,11 @@ class CalibrationHandler {
  */
 class CBACalibrationHandler : public CalibrationHandler {
    public:
-    explicit CBACalibrationHandler(CameraBoardSocket cbaSocket);
-    explicit CBACalibrationHandler(EepromData eepromData, CameraBoardSocket cbaSocket, std::optional<bool> validateCalibration = std::nullopt);
+    CBACalibrationHandler();
+    explicit CBACalibrationHandler(EepromData eepromData, std::optional<bool> validateCalibration = std::nullopt);
 
-    static CBACalibrationHandler fromJson(nlohmann::json eepromDataJson, CameraBoardSocket cbaSocket, std::optional<bool> validateCalibration = std::nullopt);
+    static CBACalibrationHandler fromJson(nlohmann::json eepromDataJson, std::optional<bool> validateCalibration = std::nullopt);
 
-    CameraBoardSocket getCBASocket() const;
     bool hasCameraCalibration() const;
 
     std::vector<std::vector<float>> getCameraIntrinsics(int resizeWidth = -1,
@@ -816,7 +815,6 @@ class CBACalibrationHandler : public CalibrationHandler {
 
    private:
     static constexpr CameraBoardSocket cameraDataSocket = CameraBoardSocket::CBA;
-    CameraBoardSocket cbaSocket;
 };
 
 }  // namespace dai

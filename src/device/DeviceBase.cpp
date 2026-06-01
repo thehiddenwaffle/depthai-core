@@ -1878,7 +1878,7 @@ CBACalibrationHandler DeviceBase::readCBACalibration(CameraBoardSocket camSocket
     } catch(const EepromError&) {
         // ignore - use default
     }
-    return CBACalibrationHandler(eepromData, camSocket);
+    return CBACalibrationHandler(eepromData);
 }
 
 CalibrationHandler DeviceBase::readCalibration2() {
@@ -1902,7 +1902,7 @@ CBACalibrationHandler DeviceBase::readCBACalibration2(CameraBoardSocket camSocke
     if(!success) {
         throw EepromError(errorMsg);
     }
-    return CBACalibrationHandler(eepromData, camSocket);
+    return CBACalibrationHandler(eepromData);
 }
 
 CalibrationHandler DeviceBase::readCalibrationOrDefault() {
@@ -1983,7 +1983,7 @@ CBACalibrationHandler DeviceBase::readFactoryCBACalibration(CameraBoardSocket ca
     if(!success) {
         throw EepromError(errorMsg);
     }
-    return CBACalibrationHandler(eepromData, camSocket);
+    return CBACalibrationHandler(eepromData);
 }
 CalibrationHandler DeviceBase::readFactoryCalibrationOrDefault() {
     dai::EepromData eepromData{};
@@ -2002,7 +2002,7 @@ CBACalibrationHandler DeviceBase::readFactoryCBACalibrationOrDefault(CameraBoard
     } catch(const EepromError&) {
         // ignore - use default
     }
-    return CBACalibrationHandler(eepromData, camSocket);
+    return CBACalibrationHandler(eepromData);
 }
 
 void DeviceBase::factoryResetCalibration() {

@@ -260,19 +260,16 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
              py::arg("throwOnError") = true,
              DOC(dai, CalibrationHandler, validateCalibrationHandler));
 
-    cbaCalibrationHandler.def(py::init<CameraBoardSocket>(), py::arg("cbaSocket"), DOC(dai, CBACalibrationHandler, CBACalibrationHandler, 2))
-        .def(py::init<EepromData, CameraBoardSocket, bool>(),
+    cbaCalibrationHandler.def(py::init<>(), DOC(dai, CBACalibrationHandler, CBACalibrationHandler))
+        .def(py::init<EepromData, bool>(),
              py::arg("eepromData"),
-             py::arg("cbaSocket"),
              py::arg("validateExtrinsics") = std::nullopt,
-             DOC(dai, CBACalibrationHandler, CBACalibrationHandler, 3))
+             DOC(dai, CBACalibrationHandler, CBACalibrationHandler, 2))
         .def_static("fromJson",
                     &CBACalibrationHandler::fromJson,
                     py::arg("eepromDataJson"),
-                    py::arg("cbaSocket"),
                     py::arg("validateExtrinsics") = std::nullopt,
                     DOC(dai, CBACalibrationHandler, fromJson))
-        .def("getCBASocket", &CBACalibrationHandler::getCBASocket, DOC(dai, CBACalibrationHandler, getCBASocket))
         .def("hasCameraCalibration",
              py::overload_cast<>(&CBACalibrationHandler::hasCameraCalibration, py::const_),
              DOC(dai, CBACalibrationHandler, hasCameraCalibration))

@@ -55,13 +55,6 @@ void validateImuCalibrationMatrix(const std::vector<std::vector<float>>& calibra
     }
 }
 
-CameraBoardSocket validateCBASocket(CameraBoardSocket cbaSocket) {
-    if(cbaSocket == CameraBoardSocket::AUTO || cbaSocket == CameraBoardSocket::CBA) {
-        throw std::runtime_error("CBACalibrationHandler requires a physical CBA socket.");
-    }
-    return cbaSocket;
-}
-
 EepromData validateCBAEepromData(EepromData eepromData) {
     if(eepromData.cameraData.empty()) {
         return eepromData;
@@ -1258,18 +1251,14 @@ bool CalibrationHandler::checkSrcLinks(CameraBoardSocket headSocket) const {
     return isConnectionValidated;
 }
 
-CBACalibrationHandler::CBACalibrationHandler(CameraBoardSocket newCbaSocket) : cbaSocket(validateCBASocket(newCbaSocket)) {}
+CBACalibrationHandler::CBACalibrationHandler() = default;
 
-CBACalibrationHandler::CBACalibrationHandler(EepromData newEepromData, CameraBoardSocket newCbaSocket, std::optional<bool> validateCalibration)
-    : CalibrationHandler(validateCBAEepromData(newEepromData), validateCalibration), cbaSocket(validateCBASocket(newCbaSocket)) {}
+CBACalibrationHandler::CBACalibrationHandler(EepromData newEepromData, std::optional<bool> validateCalibration)
+    : CalibrationHandler(validateCBAEepromData(newEepromData), validateCalibration) {}
 
-CBACalibrationHandler CBACalibrationHandler::fromJson(nlohmann::json eepromDataJson, CameraBoardSocket cbaSocket, std::optional<bool> validateCalibration) {
+CBACalibrationHandler CBACalibrationHandler::fromJson(nlohmann::json eepromDataJson, std::optional<bool> validateCalibration) {
     EepromData eepromData = eepromDataJson;
-    return CBACalibrationHandler(eepromData, cbaSocket, validateCalibration);
-}
-
-CameraBoardSocket CBACalibrationHandler::getCBASocket() const {
-    return cbaSocket;
+    return CBACalibrationHandler(eepromData, validateCalibration);
 }
 
 bool CBACalibrationHandler::hasCameraCalibration() const {
