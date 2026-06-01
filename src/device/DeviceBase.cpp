@@ -2352,8 +2352,6 @@ bool DeviceBase::startPipelineImpl(const Pipeline& pipeline) {
     // // print assets on device side for test
     // pimpl->rpcCallCheckedVoid("printAssets");
 
-    // Log the pipeline
-    logCollection::logPipeline(schema, deviceInfo);
     this->pipelineSchema = schema;  // Save the schema so it can be saved alongside the crashdump
 
     bool success = false;
