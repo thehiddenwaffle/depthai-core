@@ -1787,10 +1787,6 @@ void DeviceBase::flashCalibration(CalibrationHandler calibrationDataHandler) {
     getFlashingPermissions(factoryPermissions, protectedPermissions);
     pimpl->logger.debug("Flashing calibration. Factory permissions {}, Protected permissions {}", factoryPermissions, protectedPermissions);
 
-    /* if(!calibrationDataHandler.validateCameraArray()) {
-        throw std::runtime_error("Failed to validate the extrinsics connection. Enable debug mode for more information.");
-    } */
-
     bool success;
     std::string errorMsg;
     std::tie(success, errorMsg) = pimpl->rpcCallChecked<std::tuple<bool, std::string>>(
@@ -1922,10 +1918,6 @@ void DeviceBase::flashFactoryCalibration(CalibrationHandler calibrationDataHandl
     if(!factoryPermissions) {
         throw std::runtime_error("Calling factory API is not allowed in current configuration");
     }
-
-    /* if(!calibrationDataHandler.validateCameraArray()) {
-        throw std::runtime_error("Failed to validate the extrinsics connection. Enable debug mode for more information.");
-    } */
 
     bool success;
     std::string errorMsg;

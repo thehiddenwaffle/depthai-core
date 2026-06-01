@@ -23,10 +23,10 @@ for cam in camera_sockets:
     if hasEeprom:
         try:
             print(f'[{cam.name}] User calibration: {json.dumps(device.readCBACalibration2(cam).eepromToJson(), indent=2)}')
-        except Exception as ex:
+        except dai.EepromError as ex:
             print(f'[{cam.name}] No user calibration: {ex}')
 
         try:
             print(f'[{cam.name}] Factory calibration: {json.dumps(device.readFactoryCBACalibration(cam).eepromToJson(), indent=2)}')
-        except Exception as ex:
+        except dai.EepromError as ex:
             print(f'[{cam.name}] No factory calibration: {ex}')
