@@ -775,12 +775,18 @@ class CalibrationHandler {
  * but camera-specific APIs use CameraBoardSocket::CBA as the logical
  * single-camera data key without requiring the caller to pass it again.
  */
-class CBACalibrationHandler : public CalibrationHandler {
+class CBACalibrationHandler : private CalibrationHandler {
    public:
     CBACalibrationHandler();
     explicit CBACalibrationHandler(EepromData eepromData, std::optional<bool> validateCalibration = std::nullopt);
 
     static CBACalibrationHandler fromJson(nlohmann::json eepromDataJson, std::optional<bool> validateCalibration = std::nullopt);
+
+    using CalibrationHandler::eepromToJson;
+    using CalibrationHandler::eepromToJsonFile;
+    using CalibrationHandler::getEepromData;
+    using CalibrationHandler::hasCalibrationData;
+    using CalibrationHandler::validateCalibrationHandler;
 
     bool hasCameraCalibration() const;
 

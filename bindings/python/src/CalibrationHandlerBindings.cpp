@@ -1,5 +1,6 @@
 #include "CalibrationHandlerBindings.hpp"
 
+#include <optional>
 #include <vector>
 
 #include "depthai/common/Point2f.hpp"
@@ -10,7 +11,7 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
 
     // Type definitions
     py::class_<CalibrationHandler> calibrationHandler(m, "CalibrationHandler", DOC(dai, CalibrationHandler));
-    py::class_<CBACalibrationHandler, CalibrationHandler> cbaCalibrationHandler(m, "CBACalibrationHandler", DOC(dai, CBACalibrationHandler));
+    py::class_<CBACalibrationHandler> cbaCalibrationHandler(m, "CBACalibrationHandler", DOC(dai, CBACalibrationHandler));
 
     ///////////////////////////////////////////////////////////////////////
     ///////////////////////////////////////////////////////////////////////
@@ -261,7 +262,7 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
              DOC(dai, CalibrationHandler, validateCalibrationHandler));
 
     cbaCalibrationHandler.def(py::init<>(), DOC(dai, CBACalibrationHandler, CBACalibrationHandler))
-        .def(py::init<EepromData, bool>(),
+        .def(py::init<EepromData, std::optional<bool>>(),
              py::arg("eepromData"),
              py::arg("validateExtrinsics") = std::nullopt,
              DOC(dai, CBACalibrationHandler, CBACalibrationHandler, 2))
@@ -270,6 +271,22 @@ void CalibrationHandlerBindings::bind(pybind11::module& m, void* pCallstack) {
                     py::arg("eepromDataJson"),
                     py::arg("validateExtrinsics") = std::nullopt,
                     DOC(dai, CBACalibrationHandler, fromJson))
+        .def(
+            "getEepromData", [](const CBACalibrationHandler& self) { return self.getEepromData(); }, DOC(dai, CalibrationHandler, getEepromData))
+        .def(
+            "hasCalibrationData", [](const CBACalibrationHandler& self) { return self.hasCalibrationData(); }, DOC(dai, CalibrationHandler, hasCalibrationData))
+        .def(
+            "eepromToJsonFile",
+            [](const CBACalibrationHandler& self, std::filesystem::path destPath) { return self.eepromToJsonFile(destPath); },
+            py::arg("destPath"),
+            DOC(dai, CalibrationHandler, eepromToJsonFile))
+        .def(
+            "eepromToJson", [](const CBACalibrationHandler& self) { return self.eepromToJson(); }, DOC(dai, CalibrationHandler, eepromToJson))
+        .def(
+            "validateCalibrationHandler",
+            [](const CBACalibrationHandler& self, bool throwOnError) { self.validateCalibrationHandler(throwOnError); },
+            py::arg("throwOnError") = true,
+            DOC(dai, CalibrationHandler, validateCalibrationHandler))
         .def("hasCameraCalibration",
              py::overload_cast<>(&CBACalibrationHandler::hasCameraCalibration, py::const_),
              DOC(dai, CBACalibrationHandler, hasCameraCalibration))
