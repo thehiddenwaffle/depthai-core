@@ -98,12 +98,10 @@ dai::CameraBoardSocket validatePhysicalCBASocket(dai::CameraBoardSocket cbaSocke
     return cbaSocket;
 }
 
-void validateCBACalibrationData(const dai::CBACalibrationHandler& calibrationDataHandler) {
+bool validateCBACalibrationData(const dai::CBACalibrationHandler& calibrationDataHandler) {
     const auto eepromData = calibrationDataHandler.getEepromData();
     const auto& cameraData = eepromData.cameraData;
-    if(cameraData.size() != 1 || cameraData.find(dai::CameraBoardSocket::CBA) == cameraData.end()) {
-        throw std::runtime_error("CBA calibration data must contain exactly one CameraBoardSocket::CBA cameraData entry.");
-    }
+    return cameraData.size() == 1 && cameraData.find(dai::CameraBoardSocket::CBA) != cameraData.end();
 }
 
 std::string lowercase(std::string value) {
@@ -2009,6 +2007,10 @@ bool DeviceBase::tryFlashCalibration(CalibrationHandler calibrationDataHandler) 
 }
 
 bool DeviceBase::tryFlashCBACalibration(CBACalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket) {
+    if(!validateCBACalibrationData(calibrationDataHandler)) {
+        return false;
+    }
+
     try {
         flashCBACalibration(calibrationDataHandler, camSocket);
     } catch(const EepromError& e) {
@@ -2036,7 +2038,9 @@ void DeviceBase::flashCalibration(CalibrationHandler calibrationDataHandler) {
 
 void DeviceBase::flashCBACalibration(CBACalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket) {
     camSocket = validatePhysicalCBASocket(camSocket);
-    validateCBACalibrationData(calibrationDataHandler);
+    if(!validateCBACalibrationData(calibrationDataHandler)) {
+        throw std::runtime_error("CBA calibration data must contain exactly one CameraBoardSocket::CBA cameraData entry.");
+    }
 
     bool factoryPermissions = false;
     bool protectedPermissions = false;
@@ -2167,7 +2171,9 @@ void DeviceBase::flashFactoryCalibration(CalibrationHandler calibrationDataHandl
 
 void DeviceBase::flashFactoryCBACalibration(CBACalibrationHandler calibrationDataHandler, CameraBoardSocket camSocket) {
     camSocket = validatePhysicalCBASocket(camSocket);
-    validateCBACalibrationData(calibrationDataHandler);
+    if(!validateCBACalibrationData(calibrationDataHandler)) {
+        throw std::runtime_error("CBA calibration data must contain exactly one CameraBoardSocket::CBA cameraData entry.");
+    }
 
     bool factoryPermissions = false;
     bool protectedPermissions = false;
