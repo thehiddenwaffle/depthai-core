@@ -322,6 +322,11 @@ class Pipeline {
      */
     explicit Pipeline(std::shared_ptr<PipelineImpl> pimpl);
 
+    Pipeline(const Pipeline&) = default;
+    Pipeline& operator=(const Pipeline&) = default;
+    Pipeline(Pipeline&&) = delete;
+    Pipeline& operator=(Pipeline&&) = delete;
+
     /**
      * @returns Global properties of current pipeline
      */

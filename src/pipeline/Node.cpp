@@ -732,10 +732,9 @@ size_t Node::ConnectionInternal::Hash::operator()(const dai::Node::ConnectionInt
 
 void Node::stopPipeline() {
     try {
-        auto pipeline = getParentPipeline();
         // stopPipeline() is only called from host node threads. Hand shutdown off to a
         // helper thread so PipelineImpl teardown never tries to join the current node thread.
-        std::thread([pipeline = std::move(pipeline)]() mutable {
+        std::thread([pipeline = getParentPipeline()]() mutable {
             try {
                 pipeline.stop();
             } catch(const std::exception& ex) {
