@@ -46,7 +46,10 @@ void PipelineImplHelper::setupHolisticRecordAndReplay(std::weak_ptr<PipelineImpl
                         }
                     }
 
-                    pipeline->defaultDeviceId = pipeline->defaultDevice->getDeviceId();
+                    // The pipeline only needs the stable host-side device identifier here.
+                    // Avoid a live RPC call during build(), which can fail if the device RPC
+                    // client is not available for a reused/external Device instance.
+                    pipeline->defaultDeviceId = pipeline->defaultDevice->getDeviceInfo().getDeviceId();
 
                     if(!recordPath.empty() && !replayPath.empty()) {
                         Logging::getInstance().logger.warn("Both DEPTHAI_RECORD and DEPTHAI_REPLAY are set. Record and replay disabled.");
@@ -96,7 +99,7 @@ void PipelineImplHelper::setupHolisticRecordAndReplay(std::weak_ptr<PipelineImpl
                         }
                     }
 #else
-                    recordConfig.state = RecordConfig::RecordReplayState::NONE;
+                    pipeline->recordConfig.state = RecordConfig::RecordReplayState::NONE;
                     if(!recordPath.empty() || !replayPath.empty()) {
                         Logging::getInstance().logger.warn("Merged target is required to use holistic record/replay.");
                     }
