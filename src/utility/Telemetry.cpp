@@ -881,6 +881,9 @@ void Telemetry::event(std::string eventName, nlohmann::json properties) {
 }
 
 void Telemetry::event(const DeviceBase& device, std::string eventName, nlohmann::json properties) {
+    if(!isTelemetryEnabled()) {
+        return;
+    }
     addDeviceTelemetryProperties(device, properties);
     if(impl) {
         impl->event(std::move(eventName), std::move(properties));
@@ -888,6 +891,9 @@ void Telemetry::event(const DeviceBase& device, std::string eventName, nlohmann:
 }
 
 void Telemetry::event(const Pipeline& pipeline, std::string eventName, nlohmann::json properties) {
+    if(!isTelemetryEnabled()) {
+        return;
+    }
     addPipelineTelemetryProperties(pipeline, properties);
     if(impl) {
         impl->event(std::move(eventName), std::move(properties));
