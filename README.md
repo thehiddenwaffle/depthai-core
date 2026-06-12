@@ -220,6 +220,7 @@ The following environment variables can be set to alter default behavior of the 
 | DEPTHAI_BOOTLOADER_BINARY_ETH | Overrides device Network Bootloader binary. Mostly for internal debugging purposes. |
 | DEPTHAI_ALLOW_FACTORY_FLASHING | Internal use only |
 | DEPTHAI_LIBUSB_ANDROID_JAVAVM | JavaVM pointer that is passed to libusb for rootless Android interaction with devices. Interpreted as decimal value of uintptr_t |
+| DEPTHAI_CACHE_DIR | Overrides the default DepthAI cache root directory. |
 | DEPTHAI_CRASHDUMP | Directory in which to save the crash dump. Automatic crash dump collection is disabled if set to 0. |
 | DEPTHAI_CRASHDUMP_TIMEOUT | Specifies the duration in milliseconds to wait for device reboot when obtaining a crash dump. Automatic crash dump collection is disabled if set to 0. |
 | DEPTHAI_TELEMETRY | Telemetry is enabled by default. Set to `0` or `false` to disable event capture. |
