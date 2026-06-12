@@ -103,7 +103,7 @@ std::string lowercase(std::string value) {
 }
 
 std::filesystem::path defaultTelemetryBaseDir() {
-    return std::filesystem::current_path() / ".cache" / "depthai" / DEFAULT_TELEMETRY_ROOT_DIR;
+    return dai::platform::getDaiCacheDir() / DEFAULT_TELEMETRY_ROOT_DIR;
 }
 
 std::string generateUuidV4() {
