@@ -429,7 +429,7 @@ TelemetrySharedState::TelemetrySharedState() {
         std::filesystem::create_directories(queueDir);
         loadQueueFromDisk();
     } catch(const std::exception& ex) {
-        logger::warn("Failed to initialize telemetry storage at '{}': {}", queueDir.string(), ex.what());
+        logger::info("Failed to initialize telemetry storage at '{}': {}", queueDir.string(), ex.what());
         return;
     }
 
